@@ -1,0 +1,20 @@
+# ZmMH Phase 0 — pinned deps (install with: pip install -r requirements.txt)
+# CS50x map: CS50x hid these; here we list them so Render installs the same versions.
+Flask==3.0.3
+# Flask itself: routing, request, Jinja (CS50x Week 9 app.py core)
+Flask-SQLAlchemy==3.1.1
+# ORM: db.Model + db.session.add/commit INSTEAD of cs50.SQL db.execute("INSERT ...")
+Flask-Migrate==4.0.7
+# Migrations: lets you change models without deleting zmmh.db (CS50x you just deleted finance.db)
+Flask-Login==0.6.3
+# Login: current_user + @login_required INSTEAD of session["user_id"] dict
+Flask-WTF==1.2.1
+# Forms + CSRF protection (CS50x used raw request.form.get; this is safer for 20+ forms)
+Flask-Mail==0.9.1
+# Email: temp passwords + notifications (spec 5.1, 5.12)
+python-dotenv==1.0.1
+# Loads .env file into os.getenv() so secrets stay out of code
+gunicorn==22.0.0
+# Prod server Render runs: gunicorn run:app (CS50x used flask run dev server only)
+Pillow==10.4.0
+# Image compression for violation/ticket photos (spec section 7, max 1280px)

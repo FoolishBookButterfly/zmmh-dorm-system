@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- app/templates/base.html — mobile-first base layout every page extends -->
+<!-- CS50x map: same idea as CS50x layout.html with {% block body %}; here we use -->
+<!-- Bootstrap 5 CDN + blocks for title/head/content so per-page templates only fill content. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Makes it phone-first: scales to device width (spec section 7 mobile-first) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- PWA: lets phones "Install to home screen" (spec 5.1) -->
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <meta name="theme-color" content="#5E1A0E">
+  <!-- Per-page <head> extras (page CSS/JS) go here; base keeps it empty -->
+  {% block head %}{% endblock %}
+  <!-- Per-page <title>; default shows ZmMH -->
+  <title>{% block title %}ZmMH Dormitory System{% endblock %}</title>
+  <!-- Bootstrap 5 CSS via CDN (no install; same idea as CS50x Bootstrap but v5) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <!-- Top navbar: brand + links; collapses to hamburger on phones -->
+  <nav class="navbar navbar-expand-lg navbar-dark" style="background-color:#5E1A0E;">
+    <div class="container-fluid">
+      <a class="navbar-brand" href="/login">ZmMH · Men's Hall</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="nav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item"><a class="nav-link" href="/login">Login</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page content: child templates fill {% block content %} only -->
+  <main class="container py-3">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Bootstrap JS bundle (needed for navbar toggle) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
