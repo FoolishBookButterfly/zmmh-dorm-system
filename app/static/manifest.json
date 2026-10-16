@@ -1,0 +1,10 @@
+{
+  "_comment": "Minimal PWA manifest (spec 5.1: installable to home screen). Phones read this via <link rel=manifest> in base.html. Icons added in Phase 10 from zmmh-logo.png.",
+  "name": "ZmMH Dormitory Management System",
+  "short_name": "ZmMH",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFBF2",
+  "theme_color": "#5E1A0E",
+  "description": "Zea Mays Men's Hall roster, violations, payments, cleaning, events and evaluation."
+}

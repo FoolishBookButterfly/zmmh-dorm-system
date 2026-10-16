@@ -1,0 +1,33 @@
+# ZmMH .gitignore — files Git must NEVER commit
+# CS50x map: like hiding finance.db; here we also hide secrets and venv.
+
+# Python bytecode (auto-generated, clutters repo)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual env (each dev creates own via: python -m venv venv)
+venv/
+.venv/
+ENV/
+
+# Secrets — NEVER commit real .env (SECRET_KEY, passwords)
+.env
+
+# Local SQLite DBs (dev only; prod uses Postgres on Render)
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# Flask-Migrate local noise (keep migrations/ folder, ignore nothing there)
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Uploads during dev (violation photos, receipts) — prod uses disk/volumes
+app/static/uploads/*
+!app/static/uploads/.gitkeep
