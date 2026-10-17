@@ -10,7 +10,9 @@ from app import db  # commit rows
 from app.roster.models import Residency, SchoolYear, Role, RoleAssignment, PermissionGrant, AuditLog
 from app.roster.models import Person, User, Semester, Room, RoomAssignment  # Step 3b: roster + rooms + import
 from app.roster.forms import RoleForm, GrantForm, RevokeGrantForm, KNOWN_PERMISSIONS
-from app.roster.forms import RoomForm, AssignmentForm, ImportForm, CommitImportForm  # Step 3b: rooms/import forms
+from app.roster.forms import RoomForm, AssignmentForm, ImportForm, CommitImportForm, SettingsSaveForm  # Step 3b + 1.5: forms
+from app.roster.models import Setting  # 1.5: settings screen reads/writes Setting rows
+from app.roster.default_settings import SETTINGS as SETTINGS_META  # 1.5: labels/types/bounds come from the catalog
 from app.utils.decorators import permission_required  # Step 1 central gate
 from app.utils.decorators import permission_required  # Step 1 central gate
 
@@ -527,5 +529,87 @@ def roster_restore(residency_id):
     db.session.commit()
     flash("Restored %s." % res.person.name, "success")
     return redirect(url_for("roster.rooms"))
+
+# ---------- Phase 1.5 Step 2: /admin/settings (view+edit = settings.view: Adviser + super-admin) ----------
+
+# Validation guard-rails (percentages for w_* keys; explicit ranges for the rest).
+# These bound INPUTS -- the domain values themselves live in the Setting TABLE (spec section 7).
+_INT_BOUNDS = {"quorum_min": (1, 13), "cutoff_failed": (1, 100), "cap_retained": (1, 130),
+               "cap_waitlisted": (1, 130), "danger_margin": (0, 50), "dispute_days": (1, 60),
+               "maintenance_fee": (0, 1000000)}
+
+
+def _bounds(key):
+    if key in _INT_BOUNDS:
+        return _INT_BOUNDS[key]
+    if key.startswith("w_"):  # every weight share is a percentage
+        return (0, 100)
+    return (0, 1000000)
+
+
+# Ordered groups from the catalog (insertion order of SETTINGS): Evaluation weights, Status rules, ...
+_SETTINGS_GROUPS = {}
+for _k, _m in SETTINGS_META.items():
+    _SETTINGS_GROUPS.setdefault(_m["group"], []).append(_k)
+
+
+@roster_bp.route("/admin/settings", methods=["GET", "POST"])
+@login_required
+@permission_required("settings.view")
+def settings_page():
+    """Editable settings screen (spec section 7: values live HERE, never hardcoded).
+    Gate = settings.view for BOTH view and edit (hall decision: 70/37/10 accessible to advisers too).
+    Every change writes one AuditLog row per key (old -> new, auto reason). All-or-nothing per group."""
+    save_form = SettingsSaveForm()
+    current = {row.key: row.value for row in Setting.query.all()}
+    missing = [k for k in SETTINGS_META if k not in current]
+
+    if request.form.get("save_group") and save_form.validate_on_submit():
+        group = request.form["save_group"]
+        if group not in _SETTINGS_GROUPS:
+            flash("Unknown settings group.", "danger")
+            return redirect(url_for("roster.settings_page"))
+        updates, errors = [], []
+        for key in _SETTINGS_GROUPS[group]:
+            meta = SETTINGS_META[key]
+            raw = (request.form.get(key) or "").strip()
+            if meta["type"] == "int":
+                try:
+                    num = int(raw)
+                except ValueError:
+                    errors.append("%s: whole number required." % meta["label"])
+                    continue
+                lo, hi = _bounds(key)
+                if not (lo <= num <= hi):
+                    errors.append("%s: must be between %d and %d." % (meta["label"], lo, hi))
+                    continue
+                updates.append((key, str(num), meta["label"]))
+            else:  # choice
+                if raw not in meta["choices"]:
+                    errors.append("%s: invalid option." % meta["label"])
+                    continue
+                updates.append((key, raw, meta["label"]))
+        if errors:  # all-or-nothing: nothing saved when any field is bad
+            flash("Not saved -- " + " ".join(errors), "danger")
+            return redirect(url_for("roster.settings_page"))
+        changed = 0
+        for key, new_val, label in updates:
+            row = Setting.query.filter_by(key=key).first()
+            if row is None:  # upsert: partial-seeded DBs fill in on first save
+                db.session.add(Setting(key=key, value=new_val, description=label))
+                _audit("setting.create", "setting", None, new=new_val, reason="settings upsert: %s" % key)
+                changed += 1
+            elif row.value != new_val:
+                _audit("setting.edit", "setting", row.id, old=row.value, new=new_val,
+                       reason="settings edit: %s" % key)
+                row.value = new_val
+                changed += 1
+        db.session.commit()
+        flash("Saved %d change(s) in %s." % (changed, group), "success")
+        return redirect(url_for("roster.settings_page"))
+
+    return render_template("roster/settings.html", groups=_SETTINGS_GROUPS, meta=SETTINGS_META,
+                           current=current, missing=missing, save_form=save_form)
+
 
 

@@ -81,3 +81,7 @@ class CommitImportForm(FlaskForm):
     stage_token = HiddenField("staged file token", validators=[DataRequired()])
     commit = SubmitField("Commit import")  # unique name -> route checks request.form.get("commit")
 
+
+class SettingsSaveForm(FlaskForm):
+    """CSRF-only carrier for the grouped settings posts (inputs are raw named by setting key)."""
+
