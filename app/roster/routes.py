@@ -529,7 +529,71 @@ def roster_restore(residency_id):
     flash("Restored %s." % res.person.name, "success")
     return redirect(url_for("roster.rooms"))
 
-# ---------- Phase 1.5 Step 2: /admin/settings (view+edit = settings.view: Adviser + super-admin) ----------
+# ---------- Phase 1.5 Step 3: /admin/audit (view-only audit trail) ----------
+
+@roster_bp.route("/admin/audit")
+@login_required
+@permission_required("audit.view")
+def audit_log():
+    """Filterable audit trail (spec section 7: append-only, scores/money require reason)."""
+    year = _active_year()
+    if year is None:
+        flash("No active school year.", "warning")
+        return redirect(url_for("auth.me"))
+    q = (request.args.get("q") or "").strip()
+    action_filter = (request.args.get("action") or "").strip()
+    actor_name_filter = (request.args.get("actor") or "").strip()
+    # Join AuditLog -> User -> Person to filter by actor name
+    logs = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(500).all()
+    if q or action_filter or actor_name_filter:
+        filtered = []
+        for row in logs:
+            if q and (q.lower() in (row.table_name or "").lower() or q.lower() in (row.reason or "").lower()
+                      or str(row.record_id).lower() == q.lower()):
+                filtered.append(row)
+            elif action_filter and row.action == action_filter:
+                filtered.append(row)
+            elif actor_name_filter and row.actor_id:
+                u = db.session.get(User, row.actor_id)
+                if u and u.person and actor_name_filter.lower() in (u.person.name or "").lower():
+                    filtered.append(row)
+        logs = filtered
+    # Resolve actor usernames for display
+    actor_cache = {}
+    for row in logs:
+        if row.actor_id and row.actor_id not in actor_cache:
+            u = db.session.get(User, row.actor_id)
+            actor_cache[row.actor_id] = u.person.name if u and u.person else "unknown"
+    return render_template("roster/audit.html", logs=logs, q=q, action_filter=action_filter,
+                           actor_name_filter=actor_name_filter, actor_cache=actor_cache, year=year)
+
+
+# ---------- Phase 1.5 Step 3: account deactivation (soft-delete, spec 5.1) ----------
+
+@roster_bp.route("/admin/users/<int:user_id>/deactivate", methods=["POST"])
+@login_required
+@permission_required("role.assign")
+def deactivate_account(user_id):
+    """Soft-deactivate a user account: is_active=False (never hard-delete, spec 5.1).
+    Logged in users are protected from self-deactivation."""
+    target = db.session.get(User, user_id)
+    if target is None:
+        flash("User not found.", "danger")
+        return redirect(request.referrer or url_for("roster.roles"))
+    if not target.is_active:
+        flash("Account is already deactivated.", "info")
+        return redirect(request.referrer or url_for("roster.roles"))
+    if target.id == current_user.id:
+        flash("You cannot deactivate your own account.", "danger")
+        return redirect(request.referrer or url_for("roster.roles"))
+    _audit("user.deactivate", "user", target.id,
+           old=json.dumps({"is_active": True}),
+           new=json.dumps({"is_active": False}),
+           reason="Deactivated by %s" % current_user.username)
+    target.is_active = False
+    db.session.commit()
+    flash("Account deactivated: %s (@%s)" % (target.person.name, target.username), "success")
+    return redirect(request.referrer or url_for("roster.roles"))
 
 # Validation guard-rails (percentages for w_* keys; explicit ranges for the rest).
 # These bound INPUTS -- the domain values themselves live in the Setting TABLE (spec section 7).
