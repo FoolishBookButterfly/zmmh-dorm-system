@@ -7,6 +7,7 @@ from itsdangerous import URLSafeTimedSerializer  # reset tokens (no new package 
 from app import db  # commit Person/User/Residency/AuditLog rows
 # Exact 1.1 model names -- DO NOT rename
 from app.roster.models import Person, User, SchoolYear, Semester, Residency, Role, RoleAssignment, Room, AuditLog  # + Room for /seed-rooms
+from app.roster.models import Setting  # + Setting for /seed-settings
 from app.utils.decorators import permission_required  # Step 1 gate (adviser/super-admin only for create)
 from app.utils.email import send_temp_password, send_reset_link  # Step 2 mailer (dev console print)
 from app.auth.forms import LoginForm, ChangePasswordForm, CreateAccountForm, ForgotForm, ResetForm, BootstrapForm  # Step 3 + bootstrap forms
@@ -235,4 +236,25 @@ def seed_rooms():
     db.session.commit()
     total = sum(r.capacity for r in Room.query.all())
     return "Seeded rooms: " + ", ".join(created) + " (%d total, %d beds)" % (Room.query.count(), total)
+
+@auth_bp.route("/seed-settings")
+def seed_settings():
+    """ONE-SHOT settings seeder for shell-less hosts (Render). Sibling of /seed-roles and /seed-rooms.
+    Safe to keep forever: 404s once ALL catalog keys exist. Creates only deterministic Setting ROWS
+    the code already defines; edits still need login + settings.view via /admin/settings (audited)."""
+    from app.roster.default_settings import SETTINGS  # local import: one catalog for shell + route
+    existing = {row.key for row in Setting.query.all()}
+    missing = [k for k in SETTINGS if k not in existing]
+    if not missing:
+        abort(404)  # catalog complete -> permanently inert
+    created = []
+    for key in missing:
+        meta = SETTINGS[key]
+        db.session.add(Setting(key=key, value=meta["value"], description=meta["label"]))
+        created.append(key)
+    db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
+                            action="seed.settings", table_name="setting", record_id=None,
+                            reason="seeded: " + ", ".join(created)))
+    db.session.commit()
+    return "Seeded settings: " + ", ".join(created) + " (%d total)" % Setting.query.count()
 
