@@ -6,7 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user  #
 from itsdangerous import URLSafeTimedSerializer  # reset tokens (no new package needed)
 from app import db  # commit Person/User/Residency/AuditLog rows
 # Exact 1.1 model names -- DO NOT rename
-from app.roster.models import Person, User, SchoolYear, Semester, Residency, Role, RoleAssignment, AuditLog  # + Semester/Role/RoleAssignment for /bootstrap
+from app.roster.models import Person, User, SchoolYear, Semester, Residency, Role, RoleAssignment, Room, AuditLog  # + Room for /seed-rooms
 from app.utils.decorators import permission_required  # Step 1 gate (adviser/super-admin only for create)
 from app.utils.email import send_temp_password, send_reset_link  # Step 2 mailer (dev console print)
 from app.auth.forms import LoginForm, ChangePasswordForm, CreateAccountForm, ForgotForm, ResetForm, BootstrapForm  # Step 3 + bootstrap forms
@@ -212,4 +212,26 @@ def seed_roles():
                             reason="seeded: " + ", ".join(created)))
     db.session.commit()
     return "Seeded roles: " + ", ".join(created) + " (%d total)" % Role.query.count()
+
+@auth_bp.route("/seed-rooms")
+def seed_rooms():
+    """ONE-SHOT room seeder for shell-less hosts (Render free tier). Sibling of /seed-roles.
+    Safe to keep forever: 404s once ALL 20 catalog names exist, so it can create nothing twice.
+    Creates only deterministic Room ROWS the code already defines; assignments still need
+    login + roster.edit via the rooms pages (audited there)."""
+    from app.roster.default_rooms import ROOMS  # local import: one catalog for shell + route
+    existing = {r.name for r in Room.query.all()}
+    missing = [n for n in ROOMS if n not in existing]
+    if not missing:
+        abort(404)  # catalog complete -> permanently inert
+    created = []
+    for name in missing:
+        db.session.add(Room(name=name, capacity=ROOMS[name]))
+        created.append(name)
+    db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
+                            action="seed.rooms", table_name="room", record_id=None,
+                            reason="seeded: " + ", ".join(created)))
+    db.session.commit()
+    total = sum(r.capacity for r in Room.query.all())
+    return "Seeded rooms: " + ", ".join(created) + " (%d total, %d beds)" % (Room.query.count(), total)
 
