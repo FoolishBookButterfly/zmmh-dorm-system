@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Edit roles - ZmMH{% endblock %}
+{% block content %}
+<a class="small" href="{{ url_for('roster.roles') }}">&larr; All occupants</a>
+<h1 class="h4 mt-1">{{ person.name }}</h1>
+<p class="text-muted small">{{ person.email }}{% if user %} &middot; @{{ user.username }}{% endif %} &middot; AY {{ year.label }}</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+<div class="row g-3">
+  <div class="col-12 col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Roles (tick = active, untick = soft-deactivate)</h2>
+      <form method="post">
+        {{ role_form.hidden_tag() }}
+        {% for sub in role_form.roles %}
+        <div class="form-check">{{ sub(class_="form-check-input") }}{{ sub.label(class_="form-check-label") }}</div>
+        {% endfor %}
+        {{ role_form.save_roles(class_="btn btn-primary mt-2", style="background-color:#5E1A0E;border-color:#5E1A0E;") }}
+      </form>
+      <p class="small text-muted mt-2 mb-0">Lockout guard: you cannot remove your own Super-admin here. Unchecking keeps history (is_active=False).</p>
+    </div></div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Extra grants (allow/deny + expiry)</h2>
+      <form method="post" class="mb-3">
+        {{ grant_form.hidden_tag() }}
+        {{ grant_form.permission(class_="form-control", list="perm-suggestions", placeholder="e.g. finance.view") }}
+        <datalist id="perm-suggestions">{% for p in known_permissions %}<option value="{{ p }}"></option>{% endfor %}</datalist>
+        <div class="mt-2">{% for sub in grant_form.allow %}<div class="form-check form-check-inline">{{ sub(class_="form-check-input") }}{{ sub.label(class_="form-check-label") }}</div>{% endfor %}</div>
+        <div class="mt-2">{{ grant_form.expires.label(class_="form-label small") }}{{ grant_form.expires(class_="form-control", type="date") }}</div>
+        {{ grant_form.add_grant(class_="btn btn-sm btn-primary mt-2", style="background-color:#0A3D1E;border-color:#0A3D1E;") }}
+      </form>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>Permission</th><th>Effect</th><th>Expires</th><th></th></tr></thead>
+        <tbody>
+        {% for g in grants %}
+        <tr>
+          <td class="small">{{ g.permission }}</td>
+          <td>{% if g.allow %}<span class="badge bg-success">Allow</span>{% else %}<span class="badge bg-danger">Deny</span>{% endif %}</td>
+          <td class="small">{% if g.expires_at %}{{ g.expires_at.strftime('%Y-%m-%d') }}{% else %}forever{% endif %}</td>
+          <td class="text-end"><form method="post" class="d-inline">{{ revoke_form.csrf_token }}{{ revoke_form.grant_id(value=g.id) }}{{ revoke_form.revoke(class_="btn btn-sm btn-outline-danger") }}</form></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted small">No extra grants.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

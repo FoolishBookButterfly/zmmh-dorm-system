@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Create account - ZmMH{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-12 col-md-7 col-lg-6">
+<div class="card shadow-sm"><div class="card-body">
+<h1 class="h4 mb-1">Create account</h1>
+<p class="text-muted small">Advisers / super-admin only (role.assign). System emails username + temp password.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+<form method="post">{{ form.hidden_tag() }}
+<div class="mb-2">{{ form.name.label(class_="form-label") }}{{ form.name(class_="form-control") }}</div>
+<div class="mb-3">{{ form.email.label(class_="form-label") }}{{ form.email(class_="form-control") }}</div>
+{{ form.submit(class_="btn btn-primary w-100", style="background-color:#5E1A0E;border-color:#5E1A0E;") }}
+</form>
+</div></div></div></div>
+{% endblock %}

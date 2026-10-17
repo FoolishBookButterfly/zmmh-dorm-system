@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Import roster - ZmMH{% endblock %}
+{% block content %}
+<a class="small" href="{{ url_for('roster.rooms') }}">&larr; Rooms</a>
+<h1 class="h4 mt-1">Import roster CSV</h1>
+<p class="small text-muted">Columns: name, email, birthday (YYYY-MM-DD), address, contact_number, emergency_contact, course_year, room. Blanks stay blank. Vacancy &gt; capacity is fine - empty beds show as vacancies.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h6">Step 1 - Upload and preview (nothing is written)</h2>
+  <form method="post" enctype="multipart/form-data">
+    {{ import_form.hidden_tag() }}
+    <div class="mb-2">{{ import_form.file.label(class_="form-label") }}{{ import_form.file(class_="form-control") }}</div>
+    {{ import_form.preview(class_="btn", style="background-color:#5E1A0E;color:#fff;") }}
+  </form>
+</div></div>
+
+{% if summary %}
+<div class="alert alert-info py-2">
+  Preview: <b>{{ summary.new }} new</b> &middot; {{ summary.skipped }} skipped (already exist) &middot; {{ summary.errors }} errors
+  {% if summary.by_room %}<br><span class="small">Per room: {% for rm, names in summary.by_room.items() %}{{ rm }} ({{ names|length }}){% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+</div>
+{% endif %}
+
+{% if errors %}
+<div class="alert alert-danger py-2"><b>Errors / blockers:</b>
+  <ul class="mb-0 small">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if preview %}
+<div class="card mb-3"><div class="card-body">
+  <h2 class="h6">Step 2 - Commit {{ preview.new|length }} new occupants</h2>
+  <p class="small text-muted">Creates Person + Residency + room assignment (joined_at = today; mid-year joiners are excused from earlier dues, cleaning and events by later phases). No logins are created here - use /create-account per person or Phase 6 bulk issue.</p>
+  <form method="post">
+    {{ commit_form.csrf_token }}
+    {{ commit_form.stage_token(value=stage_token or '') }}
+    {{ commit_form.commit(class_="btn", style="background-color:#0A3D1E;color:#fff;", disabled=not stage_token) }}
+  </form>
+  {% if preview.skipped %}
+  <h3 class="h6 mt-3">Skipped (already exist)</h3>
+  <table class="table table-sm"><thead><tr><th>Name</th><th>Email</th><th>State</th></tr></thead><tbody>
+  {% for s in preview.skipped %}<tr><td>{{ s.name }}</td><td class="small">{{ s.email }}</td><td class="small text-muted">{{ s.state }}</td></tr>{% endfor %}
+  </tbody></table>
+  {% endif %}
+</div></div>
+{% endif %}
+{% endblock %}

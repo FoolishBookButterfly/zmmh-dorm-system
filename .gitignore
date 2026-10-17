@@ -14,6 +14,9 @@ ENV/
 # Secrets — NEVER commit real .env (SECRET_KEY, passwords)
 .env
 
+# Real roster PII must never be committed (upload via /roster/import only)
+*.csv
+
 # Local SQLite DBs (dev only; prod uses Postgres on Render)
 *.db
 *.sqlite

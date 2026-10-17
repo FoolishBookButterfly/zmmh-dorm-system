@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Settings - ZmMH{% endblock %}
+{% block content %}
+<h1 class="h4">Settings <span class="badge bg-secondary">editable, not in code</span></h1>
+<p class="small text-muted">Values live in the Setting table (spec section 7). Every save writes an audit row per changed key. You can edit these because you hold <code>settings.view</code> (Advisers + super-admin).</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+{% if missing %}
+<div class="alert alert-warning py-2"><b>{{ missing|length }} setting(s) not seeded:</b> {{ missing|join(', ') }}.
+Run <code>seed_settings.py</code> in flask shell or visit <code>/seed-settings</code> once. Saving a group still creates its missing keys.</div>
+{% endif %}
+<div class="row g-3">
+{% for group, keys in groups.items() %}
+  <div class="col-12 col-lg-6">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">{{ group }}</h2>
+      <form method="post">
+        {{ save_form.csrf_token }}
+        {% for key in keys %}
+        {% set m = meta[key] %}
+        <div class="mb-2">
+          <label class="form-label small mb-0" for="k_{{ key }}">{{ m.label }}{% if key in current %} <span class="text-muted">(current: {{ current[key] }})</span>{% endif %}</label>
+          {% if m.type == 'choice' %}
+          <select class="form-select form-select-sm" id="k_{{ key }}" name="{{ key }}">
+            {% for c in m.choices %}<option value="{{ c }}" {% if current.get(key, m.value) == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+          </select>
+          {% else %}
+          <input class="form-control form-control-sm" type="number" id="k_{{ key }}" name="{{ key }}"
+                 value="{{ current.get(key, m.value) }}"
+                 {% if key.startswith('w_') %}min="0" max="100"{% endif %}>
+          {% endif %}
+          {% if m.help %}<div class="form-text small">{{ m.help }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        <button class="btn btn-sm" name="save_group" value="{{ group }}" style="background-color:#5E1A0E;color:#fff;">Save {{ group }}</button>
+      </form>
+    </div></div>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

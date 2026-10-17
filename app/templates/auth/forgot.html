@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Forgot password - ZmMH{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-12 col-md-6 col-lg-5">
+<div class="card shadow-sm"><div class="card-body">
+<h1 class="h4 mb-1">Forgot password</h1>
+<p class="text-muted small">We email a 1-hour reset link if the address exists. Dev: see console.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+<form method="post">{{ form.hidden_tag() }}
+<div class="mb-3">{{ form.email.label(class_="form-label") }}{{ form.email(class_="form-control") }}</div>
+{{ form.submit(class_="btn btn-primary w-100", style="background-color:#5E1A0E;border-color:#5E1A0E;") }}
+</form>
+</div></div></div></div>
+{% endblock %}
