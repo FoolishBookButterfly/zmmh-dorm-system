@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Me - ZmMH{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-12 col-md-7 col-lg-6">
+<div class="card shadow-sm"><div class="card-body">
+<h1 class="h4 mb-1">{{ current_user.person.name }}</h1>
+<p class="text-muted small mb-2">@{{ current_user.username }} &middot; {{ current_user.person.email }}</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+<h2 class="h6 mt-2">My authority ({{ roles|length }})</h2>
+{% if roles %}
+<p class="mb-2">{% for r in roles %}<span class="badge me-1" style="background-color:#5E1A0E;">{{ r }}</span>{% endfor %}</p>
+<p class="small text-muted mb-0">Assigned by adviser/super-admin for the active year. Your nav shows only what these permit (Plate 2B).</p>
+{% else %}
+<p class="small text-muted mb-0">No authority roles yet - occupant view only. Roles are assigned by advisers / super-admin only.</p>
+{% endif %}
+<hr>
+<p class="small text-muted mb-0">Full dashboard (provisional score, balance, clearance) arrives in Phase 6. Use the nav above - it adapts to your permissions.</p>
+</div></div></div></div>
+{% endblock %}

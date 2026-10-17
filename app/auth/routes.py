@@ -62,8 +62,10 @@ def logout():
 @auth_bp.route("/me")
 @login_required
 def me():
-    """Tiny proof page until dashboards exist (Phase 6): shows who you are."""
-    return "Logged in as " + current_user.username + " (must_change=" + str(current_user.must_change_password) + ")"
+    """Profile + authority page until dashboards exist (Phase 6). Renders base.html so the nav shows."""
+    from app.utils.decorators import _active_assignments  # SAME helper the nav/can() uses (one source of truth)
+    roles = [a.role.name for a in _active_assignments(current_user) if a.role is not None]
+    return render_template("auth/me.html", roles=roles)
 
 @auth_bp.route("/change-password", methods=["GET", "POST"])
 @login_required  # temp users ARE logged in, so they can reach this (before_request exempts it)

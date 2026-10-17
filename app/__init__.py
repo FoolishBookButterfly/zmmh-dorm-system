@@ -71,6 +71,10 @@ def create_app():
     from app.auth.routes import auth_bp  # noqa: E402 (import after init to avoid cycles)
     app.register_blueprint(auth_bp)
 
+    # Phase 1.3 Step 4: roster blueprint -> /admin/roles (guarded by role.assign inside)
+    from app.roster.routes import roster_bp  # noqa: E402
+    app.register_blueprint(roster_bp)
+
     # Import models so Flask-Migrate sees the tables (no-op at runtime, needed for autogenerate)
     # Phase 1.1: roster models only; later phases add violations/finance/... imports here
     from app.roster import models as roster_models  # noqa: E402,F401
