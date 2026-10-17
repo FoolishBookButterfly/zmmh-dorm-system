@@ -1,8 +1,9 @@
 # app/roster/forms.py -- Phase 1.3 Step 3: forms for assigning roles + per-person grants
 # CS50x map: CS50x used request.form.get + manual checks. Flask-WTF gives CSRF + validation free.
 from flask_wtf import FlaskForm  # base: CSRF token via form.hidden_tag()
-from wtforms import SelectMultipleField, StringField, RadioField, DateField, SubmitField, HiddenField  # field types
-from wtforms.validators import DataRequired, Length, Optional  # rules per field
+from wtforms import SelectMultipleField, StringField, RadioField, DateField, SubmitField, HiddenField, SelectField, IntegerField, BooleanField, TextAreaField  # field types
+from wtforms.validators import DataRequired, Length, NumberRange, Optional, ValidationError  # rules per field
+from flask_wtf.file import FileField, FileAllowed, FileRequired  # upload validators (import page)
 from wtforms.widgets import ListWidget, CheckboxInput  # render a multi-select as a stack of checkboxes
 
 
@@ -44,3 +45,33 @@ class RevokeGrantForm(FlaskForm):
     """Tiny per-row form: revoke = DELETE that grant row (grants are overrides, not history)."""
     grant_id = HiddenField(validators=[DataRequired()])  # which grant to remove (hidden input)
     revoke = SubmitField("Revoke")  # unique name -> route checks request.form.get("revoke")
+
+class RoomForm(FlaskForm):
+    """Edit ONE room: name is unique, capacity >= 1. Lowering below occupancy is blocked in the route."""
+    name = StringField("Room name", validators=[DataRequired(), Length(max=80)])
+    capacity = IntegerField("Beds", validators=[DataRequired(), NumberRange(min=1, message="Capacity must be at least 1.")])
+    save_room = SubmitField("Save room")  # unique name -> route checks request.form.get("save_room")
+
+
+class AssignmentForm(FlaskForm):
+    """Assign ONE occupant to a room for a semester; tick = this semester's Big Brod (unique per room)."""
+    # choices injected by the route (active-year residencies + semester list)
+    residency_id = SelectField("Occupant", coerce=int, validators=[DataRequired()])  # value = Residency.id
+    semester_id = SelectField("Semester", coerce=int, validators=[DataRequired()])  # value = Semester.id
+    is_big_brod = BooleanField("Big Brod (the one stayer for this room)")
+    move_reason = TextAreaField("Reason (required when moving/unticking, audited)", validators=[Length(max=255)])
+    save_assignment = SubmitField("Assign")  # unique name -> route checks request.form.get("save_assignment")
+
+
+def _csv_ext(form, field):
+    """Extra guard: filename must end .csv (FileAllowed checks content type; this checks the tail)."""
+    if field.data and not field.data.filename.lower().endswith(".csv"):
+        raise ValidationError("File must end in .csv.")
+
+
+class ImportForm(FlaskForm):
+    """Upload the roster CSV (name,email,birthday,address,contact_number,emergency_contact,course_year,room).
+    Server parses with csv module; route does dry-run preview BEFORE any commit."""
+    file = FileField("Roster CSV", validators=[FileRequired(), FileAllowed(["csv"], "CSV only."), _csv_ext])
+    preview = SubmitField("Preview import")  # unique name -> route checks request.form.get("preview")
+
