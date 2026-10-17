@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ room.name }} - ZmMH{% endblock %}
+{% block content %}
+<a class="small" href="{{ url_for('roster.rooms') }}">&larr; All rooms</a>
+<h1 class="h4 mt-1">{{ room.name }} <span class="badge bg-secondary">{{ fill|length }}/{{ room.capacity }} occupied</span></h1>
+<p class="small text-muted">{{ sem.name }}, AY {{ year.label }}</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+<div class="row g-3">
+  <div class="col-12 col-lg-7">
+    <div class="card h-100"><div class="card-body">
+      <h2 class="h6">Beds</h2>
+      <table class="table table-sm mb-0">
+        <thead><tr><th>#</th><th>Occupant</th><th>Course</th><th>Flag</th></tr></thead>
+        <tbody>
+        {% for item in fill %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ item.person.name }}
+            {% if item.residency.status == 'former' %}<span class="badge bg-secondary">former</span>{% endif %}</td>
+          <td class="small text-muted">{{ item.person.course_year or '-' }}</td>
+          <td>{% if item.assignment.is_big_brod %}<span class="badge" style="background-color:#F59E0B;color:#3A0F0B;">Big Brod &#9733;</span>{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted">No occupants assigned yet.</td></tr>
+        {% endfor %}
+        {% for i in range(fill|length, room.capacity) %}
+        <tr class="table-light"><td>{{ i + 1 }}</td><td colspan="3"><span class="text-muted small">vacant bed</span></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  </div>
+  <div class="col-12 col-lg-5">
+    <div class="card mb-3"><div class="card-body">
+      <h2 class="h6">Assign occupant (needs roster.edit)</h2>
+      <form method="post">
+        {{ a_form.hidden_tag() }}
+        <div class="mb-2">{{ a_form.residency_id.label(class_="form-label") }}{{ a_form.residency_id(class_="form-select") }}</div>
+        <div class="mb-2">{{ a_form.semester_id.label(class_="form-label") }}{{ a_form.semester_id(class_="form-select") }}</div>
+        <div class="form-check mb-2">{{ a_form.is_big_brod(class_="form-check-input") }}{{ a_form.is_big_brod.label(class_="form-check-label") }}</div>
+        <div class="mb-2">{{ a_form.move_reason.label(class_="form-label") }}{{ a_form.move_reason(class_="form-control", rows=2) }}</div>
+        {{ a_form.save_assignment(class_="btn w-100", style="background-color:#5E1A0E;color:#fff;") }}
+      </form>
+      <p class="small text-muted mt-2 mb-0">Big Brod is unique per room+semester. Moving from another room needs a reason (audit).</p>
+    </div></div>
+    <div class="card"><div class="card-body">
+      <h2 class="h6">Edit room (needs roster.edit)</h2>
+      <form method="post">
+        {{ room_form.hidden_tag() }}
+        <div class="mb-2">{{ room_form.name.label(class_="form-label") }}{{ room_form.name(class_="form-control") }}</div>
+        <div class="mb-2">{{ room_form.capacity.label(class_="form-label") }}{{ room_form.capacity(class_="form-control") }}</div>
+        {{ room_form.save_room(class_="btn btn-outline-dark w-100") }}
+      </form>
+      <p class="small text-muted mt-2 mb-0">Capacity below current occupancy is blocked.</p>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

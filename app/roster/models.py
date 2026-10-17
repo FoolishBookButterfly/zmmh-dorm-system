@@ -72,7 +72,9 @@ class Residency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     person_id = db.Column(db.Integer, db.ForeignKey("person.id"), nullable=False)
     school_year_id = db.Column(db.Integer, db.ForeignKey("school_year.id"), nullable=False)
-    status = db.Column(db.String(30), default="active")  # active/staff/Retained/Waitlisted/Recommended/Failed/Expelled/Graduating (staff = NON-OCCUPANT staff e.g. adviser: roles anchor only, never ranked/counted. Super-admin MAY be an occupant)
+    status = db.Column(db.String(30), default="active")  # active/staff/former/Retained/Waitlisted/Recommended/Failed/Expelled/Graduating (staff = NON-OCCUPANT staff e.g. adviser: roles anchor only, never ranked/counted. Super-admin MAY be an occupant)
+    joined_at = db.Column(db.Date, nullable=True)  # first day counted; NULL = from year start. Mid-year joiners are excused from earlier dues (Phase 3), cleaning attendance and event attendance (Phases 4-5 read this)
+    left_at = db.Column(db.Date, nullable=True)  # set on soft-remove; cleared on restore (history + payments kept, spec 5.2)
 
     room_assignments = db.relationship("RoomAssignment", backref="residency", lazy=True, cascade="all, delete-orphan")
     role_assignments = db.relationship("RoleAssignment", backref="residency", lazy=True, cascade="all, delete-orphan")

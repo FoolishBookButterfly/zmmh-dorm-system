@@ -75,3 +75,9 @@ class ImportForm(FlaskForm):
     file = FileField("Roster CSV", validators=[FileRequired(), FileAllowed(["csv"], "CSV only."), _csv_ext])
     preview = SubmitField("Preview import")  # unique name -> route checks request.form.get("preview")
 
+
+class CommitImportForm(FlaskForm):
+    """Second step: carries CSRF + the staging token so COMMIT is CSRF-validated too."""
+    stage_token = HiddenField("staged file token", validators=[DataRequired()])
+    commit = SubmitField("Commit import")  # unique name -> route checks request.form.get("commit")
+

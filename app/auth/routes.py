@@ -106,7 +106,8 @@ def create_account():
         db.session.flush()  # get user.id so AuditLog.record_id is filled (spec 7 auditability)
         year = SchoolYear.query.filter_by(is_active=True).first()  # occupant needs a yearly record
         if year is not None:
-            db.session.add(Residency(person_id=person.id, school_year_id=year.id, status="active"))
+            from datetime import date as _date  # local import: mid-year joiners counted only from today
+            db.session.add(Residency(person_id=person.id, school_year_id=year.id, status="active", joined_at=_date.today()))
         db.session.add(AuditLog(actor_id=current_user.id, action="user.create", table_name="user", record_id=user.id, reason="created " + username + " for " + email))
         db.session.commit()
         send_temp_password(email, username, temp)  # dev: console print (Step 2)
