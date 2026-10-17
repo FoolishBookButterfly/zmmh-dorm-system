@@ -20,13 +20,21 @@ class ChangePasswordForm(FlaskForm):
 class CreateAccountForm(FlaskForm):
     """Adviser/super-admin creates account by email + name (spec 5.1)."""
     name = StringField("Full name", validators=[DataRequired(), Length(max=120)])
-    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=120)])
+    email = StringField("Email", validators=[DataRequired(), Email(check_deliverability=False), Length(max=120)])  # format only; no DNS (internal dorm domains may lack public MX)
     submit = SubmitField("Create + email temp password")
 
 class ForgotForm(FlaskForm):
     """Request reset link by email."""
-    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=120)])
+    email = StringField("Email", validators=[DataRequired(), Email(check_deliverability=False), Length(max=120)])  # format only; no DNS (internal dorm domains may lack public MX)
     submit = SubmitField("Send reset link")
+
+class BootstrapForm(FlaskForm):
+    """First-run account creator (see /bootstrap): only reachable while the DB has ZERO users."""
+    name = StringField("Your full name", validators=[DataRequired(), Length(max=120)])
+    email = StringField("Email", validators=[DataRequired(), Email(check_deliverability=False), Length(max=120)])
+    password = PasswordField("Chosen password (min 8 -- still forced to change at first login)", validators=[DataRequired(), Length(min=8, max=128)])
+    submit = SubmitField("Create my account")
+
 
 class ResetForm(FlaskForm):
     """Set new password from emailed token link (1 hour expiry)."""

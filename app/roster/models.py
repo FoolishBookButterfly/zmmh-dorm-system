@@ -1,7 +1,7 @@
 # app/roster/models.py — Phase 1.1: people, years, rooms, roles, settings, audit
 # CS50x map: each class = one table (was CREATE TABLE + db.execute). Rows = objects.
 # Exact names from spec section 9 — DO NOT rename, later phases import these.
-from datetime import datetime  # for default timestamps (when rows were created)
+from datetime import datetime, timezone  # timestamps; timezone= for deprecated utcnow() replacement
 from flask_login import UserMixin  # gives User is_authenticated/is_active/get_id for Flask-Login
 from app import db  # the SQLAlchemy() handle from factory (app/__init__.py)
 from werkzeug.security import generate_password_hash, check_password_hash  # CS50x hash helpers, same as Finance
@@ -20,7 +20,7 @@ class Person(db.Model):
     course_year = db.Column(db.String(120), nullable=True)  # e.g. "BS CS 2"
     photo_path = db.Column(db.String(255), nullable=True)  # optional photo file path
     cannot_reapply = db.Column(db.Boolean, default=False)  # True if Failed/Expelled (blocks re-add)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)  # when added
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))  # naive UTC (SQLite-safe)
 
     # One person -> one login (User) + many year-records (Residency)
     user = db.relationship("User", backref="person", uselist=False, cascade="all, delete-orphan")
@@ -72,7 +72,7 @@ class Residency(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     person_id = db.Column(db.Integer, db.ForeignKey("person.id"), nullable=False)
     school_year_id = db.Column(db.Integer, db.ForeignKey("school_year.id"), nullable=False)
-    status = db.Column(db.String(30), default="active")  # active/Retained/Waitlisted/Recommended/Failed/Expelled/Graduating
+    status = db.Column(db.String(30), default="active")  # active/staff/Retained/Waitlisted/Recommended/Failed/Expelled/Graduating (staff = NON-OCCUPANT staff e.g. adviser: roles anchor only, never ranked/counted. Super-admin MAY be an occupant)
 
     room_assignments = db.relationship("RoomAssignment", backref="residency", lazy=True, cascade="all, delete-orphan")
     role_assignments = db.relationship("RoleAssignment", backref="residency", lazy=True, cascade="all, delete-orphan")
@@ -153,4 +153,4 @@ class AuditLog(db.Model):
     old_value = db.Column(db.Text, nullable=True)  # JSON before
     new_value = db.Column(db.Text, nullable=True)  # JSON after
     reason = db.Column(db.String(255), nullable=True)  # required for scores/money changes
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))  # naive UTC

@@ -1,7 +1,7 @@
 # app/utils/decorators.py -- ONE central permission check for every page (spec section 7)
 # CS50x map: CS50x had a single login_required in helpers.py. Here every route needs
 # @login_required (logged in?) PLUS @permission_required("finance.view") (allowed?).
-from datetime import datetime  # to ignore expired PermissionGrants
+from datetime import datetime, timezone  # to ignore expired PermissionGrants (naive UTC both sides)
 from functools import wraps  # preserves route names so Flask routing still works
 from flask import abort  # 403 page on deny
 from flask_login import current_user  # the logged-in User (was session["user_id"] in CS50x)
@@ -35,7 +35,7 @@ def has_permission(user, permission):
         if a.role is not None and a.role.name == SUPERADMIN_ROLE:
             return True
     granted_by_role = any(a.role is not None and a.role.permissions and permission in a.role.permissions for a in assignments)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)  # naive UTC matches DateTime columns
     res_ids = list(set(a.residency_id for a in assignments))
     allow_override = False
     deny_override = False

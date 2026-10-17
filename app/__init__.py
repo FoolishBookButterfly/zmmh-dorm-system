@@ -57,7 +57,7 @@ def create_app():
         """Flask-Login calls this per request to turn session id -> User object."""
         from app.roster.models import User  # local import avoids circular import at startup
         try:
-            return User.query.get(int(user_id))
+            return db.session.get(User, int(user_id))  # modern API (Query.get is legacy)
         except (TypeError, ValueError):
             return None
 

@@ -17,5 +17,9 @@ python-dotenv==1.0.1
 # Loads .env file into os.getenv() so secrets stay out of code
 gunicorn==22.0.0
 # Prod server Render runs: gunicorn run:app (CS50x used flask run dev server only)
-Pillow==10.4.0
+Pillow==12.3.0  # bumped from 10.4.0: no wheels for Python 3.13+/3.14, Render source-build would fail
 # Image compression for violation/ticket photos (spec section 7, max 1280px)
+email-validator==2.2.0
+# Needed for WTForms Email() validator (Step 3 CreateAccountForm/ForgotForm)
+psycopg2-binary==2.9.9
+# Postgres driver: REQUIRED for Neon choice A (Render installs from this file; local SQLite never touches it)
