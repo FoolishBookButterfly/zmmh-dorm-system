@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- app/templates/base.html — mobile-first base layout every page extends -->
-<!-- CS50x map: same idea as CS50x layout.html with {% block body %}; here we use -->
+<!-- CS50x map: same idea as CS50x layout.html "body" block; here we use head/title/content blocks -->
 <!-- Bootstrap 5 CDN + blocks for title/head/content so per-page templates only fill content. -->
 <html lang="en">
 <head>
@@ -33,7 +33,7 @@
     </div>
   </nav>
 
-  <!-- Page content: child templates fill {% block content %} only -->
+  <!-- Page content: child templates fill the "content" block only -->
   <main class="container py-3">
     {% block content %}{% endblock %}
   </main>
