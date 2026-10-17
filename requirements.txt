@@ -21,5 +21,7 @@ Pillow==12.3.0  # bumped from 10.4.0: no wheels for Python 3.13+/3.14, Render so
 # Image compression for violation/ticket photos (spec section 7, max 1280px)
 email-validator==2.2.0
 # Needed for WTForms Email() validator (Step 3 CreateAccountForm/ForgotForm)
-psycopg2-binary==2.9.9
-# Postgres driver: REQUIRED for Neon choice A (Render installs from this file; local SQLite never touches it)
+psycopg[binary]>=3.1,<4
+# Postgres driver v3 (psycopg3): SQLAlchemy 2.x's DEFAULT driver for postgresql:// URLs.
+# We do NOT use psycopg2 here: it ships no Python 3.14 wheels, so Render's source build would fail.
+# Local SQLite dev never touches this; Neon/Render Postgres (choice A) needs it.
