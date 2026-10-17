@@ -83,12 +83,10 @@ class CommitImportForm(FlaskForm):
 
 
 class SettingsSaveForm(FlaskForm):
-    """CSRF-only carrier for the grouped settings posts (inputs are raw named by setting key).
-
-    WHY: our Flask config disables CSRF (WTF_CSRF_ENABLED = False) for cs50x-era routes,
-    so Flask-WTF never injects csrf_token into the form. Rendering form.csrf_token()
-    would print '' -- so we attach the standard_hidden field ourselves. The route still
-    calls validate_on_submit() which is a no-op when CSRF is off, but the hidden input
-    guarantees the page always emits a valid csrf token (browsers + any strict proxy)."""
-    csrf_token = HiddenField("csrf token carrier")
+    """CSRF-only carrier for the grouped settings posts.
+    Flask-WTF provides csrf_token automatically; no need to redefine it.
+    The route reads named inputs directly (save_form.validate_on_submit()) which
+    still runs CSRF validation. The template includes {{ save_form.csrf_token }}.
+    """
+    pass
 

@@ -13,8 +13,7 @@ from app.roster.forms import RoleForm, GrantForm, RevokeGrantForm, KNOWN_PERMISS
 from app.roster.forms import RoomForm, AssignmentForm, ImportForm, CommitImportForm, SettingsSaveForm  # Step 3b + 1.5: forms
 from app.roster.models import Setting  # 1.5: settings screen reads/writes Setting rows
 from app.roster.default_settings import SETTINGS as SETTINGS_META  # 1.5: labels/types/bounds come from the catalog
-from app.utils.decorators import permission_required  # Step 1 central gate
-from app.utils.decorators import permission_required  # Step 1 central gate
+from app.utils.decorators import permission_required, has_permission  # Step 1 central gate
 
 roster_bp = Blueprint("roster", __name__)  # registered in factory right after auth_bp
 
