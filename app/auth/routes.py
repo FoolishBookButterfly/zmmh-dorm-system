@@ -179,8 +179,10 @@ def bootstrap():
                             Semester(school_year_id=year.id, name="Sem 2")])
         res = Residency(person_id=person.id, school_year_id=year.id, status="active")  # owner IS an occupant
         db.session.add(res); db.session.flush()  # res.id
-        role = Role(name="Super-admin", permissions=[], description="Bootstrap account role")
-        db.session.add(role); db.session.flush()  # role.id
+        role = Role.query.filter_by(name="Super-admin").first()  # get-or-create: /seed-roles may have seeded it FIRST
+        if role is None:
+            role = Role(name="Super-admin", permissions=[], description="Bootstrap account role")
+            db.session.add(role); db.session.flush()  # role.id
         db.session.add(RoleAssignment(residency_id=res.id, role_id=role.id, school_year_id=year.id,
                                       is_active=True, assigned_by=user.id))
         db.session.add(AuditLog(actor_id=user.id, action="bootstrap.create", table_name="user",
@@ -189,3 +191,25 @@ def bootstrap():
         flash("Account created -- log in as " + username + " (password change required next).", "success")
         return redirect(url_for("auth.login"))
     return render_template("auth/bootstrap.html", form=form)
+
+@auth_bp.route("/seed-roles")
+def seed_roles():
+    """ONE-SHOT role-catalog seeder for shell-less hosts (Render free tier). Sibling of /bootstrap.
+    Safe to keep forever: 404s once ALL 17 catalog names exist, so it can create nothing twice.
+    Anonymous-safe: it only creates the same deterministic Role ROWS the code already defines;
+    granting them to anyone still requires login + role.assign via /admin/roles (which auditors see)."""
+    from app.roster.default_roles import ROLES  # local import: one catalog for shell + route
+    existing = {r.name for r in Role.query.all()}
+    missing = [n for n in ROLES if n not in existing]
+    if not missing:
+        abort(404)  # catalog complete -> permanently inert
+    created = []
+    for name in missing:
+        db.session.add(Role(name=name, permissions=ROLES[name], description="Seeded via /seed-roles"))
+        created.append(name)
+    db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
+                            action="seed.roles", table_name="role", record_id=None,
+                            reason="seeded: " + ", ".join(created)))
+    db.session.commit()
+    return "Seeded roles: " + ", ".join(created) + " (%d total)" % Role.query.count()
+
