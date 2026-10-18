@@ -9,6 +9,7 @@ from flask_login import LoginManager  # login: current_user + @login_required vs
 from flask_mail import Mail  # email: temp passwords + notifications (spec 5.1)
 from dotenv import load_dotenv  # loads .env into os.getenv()
 from sqlalchemy import MetaData  # lets us name FK constraints (SQLite batch alters REQUIRE names)
+from flask_wtf.csrf import CSRFProtect  # CSRF: protects all POST forms (Flask-WTF)
 
 # Load .env BEFORE reading config (so os.getenv sees SECRET_KEY, DATABASE_URL locally)
 load_dotenv()
@@ -27,6 +28,7 @@ db = SQLAlchemy(metadata=MetaData(naming_convention=_naming_convention))  # ORM 
 migrate = Migrate()  # handles `flask db migrate/upgrade`
 login_manager = LoginManager()  # handles login sessions + unauthorized redirects
 mail = Mail()  # handles Flask-Mail send (configured but unused until Phase 1)
+csrf = CSRFProtect()  # globally protects all POST forms via Flask-WTF (registers csrf_token in Jinja)
 
 
 def create_app():
@@ -48,6 +50,7 @@ def create_app():
     migrate.init_app(app, db)  # migrations now track db.Model changes
     login_manager.init_app(app)  # login now guards routes
     mail.init_app(app)  # mail ready for Phase 1 temp-password emails
+    csrf.init_app(app)  # Flask-WTF CSRF on all POSTs (registers csrf_token() in Jinja)
 
     # Where @login_required sends anonymous users (was redirect to apology in CS50x)
     login_manager.login_view = "auth.login"

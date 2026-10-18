@@ -197,23 +197,35 @@ def bootstrap():
 @auth_bp.route("/seed-roles")
 def seed_roles():
     """ONE-SHOT role-catalog seeder for shell-less hosts (Render free tier). Sibling of /bootstrap.
-    Safe to keep forever: 404s once ALL 17 catalog names exist, so it can create nothing twice.
-    Anonymous-safe: it only creates the same deterministic Role ROWS the code already defines;
+    Safe to keep forever: 404s once ALL 17 catalog names exist AND their permission bundles
+    match the catalog (re-visits self-heal stale bundles, then go inert again).
+    Anonymous-safe: it only writes the deterministic Role ROWS the code already defines;
     granting them to anyone still requires login + role.assign via /admin/roles (which auditors see)."""
     from app.roster.default_roles import ROLES  # local import: one catalog for shell + route
-    existing = {r.name for r in Role.query.all()}
+    existing = {r.name: r for r in Role.query.all()}
     missing = [n for n in ROLES if n not in existing]
-    if not missing:
-        abort(404)  # catalog complete -> permanently inert
-    created = []
+    stale = [n for n in ROLES if n in existing
+             and list((existing[n].permissions or [])) != list(ROLES[n])]
+    if not missing and not stale:
+        abort(404)  # catalog complete and current -> permanently inert
+    created, refreshed = [], []
     for name in missing:
         db.session.add(Role(name=name, permissions=ROLES[name], description="Seeded via /seed-roles"))
         created.append(name)
+    for name in stale:
+        existing[name].permissions = ROLES[name]
+        refreshed.append(name)
     db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
                             action="seed.roles", table_name="role", record_id=None,
-                            reason="seeded: " + ", ".join(created)))
+                            reason="seeded: " + ", ".join(created)
+                                   + ("; refreshed bundles: " + ", ".join(refreshed) if refreshed else "")))
     db.session.commit()
-    return "Seeded roles: " + ", ".join(created) + " (%d total)" % Role.query.count()
+    parts = []
+    if created:
+        parts.append("Seeded roles: " + ", ".join(created))
+    if refreshed:
+        parts.append("Refreshed bundles: " + ", ".join(refreshed))
+    return "; ".join(parts) + " (%d total)" % Role.query.count()
 
 @auth_bp.route("/seed-rooms")
 def seed_rooms():

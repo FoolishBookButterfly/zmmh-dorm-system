@@ -23,6 +23,7 @@ class RoleForm(FlaskForm):
 # Suggestions shown in the grant textbox (datalist). New perms get added here as phases ship.
 KNOWN_PERMISSIONS = [
     "roster.view", "roster.export", "roster.view_private", "roster.edit", "role.assign",
+    "schoolyear.manage",
     "finance.view", "finance.edit", "finance.receipts", "finance.expenses",
     "violations.view", "violations.log", "violations.confirm",
     "events.view", "events.edit", "events.attendance",
@@ -89,4 +90,13 @@ class SettingsSaveForm(FlaskForm):
     still runs CSRF validation. The template includes {{ save_form.csrf_token }}.
     """
     pass
+
+
+class SchoolYearForm(FlaskForm):
+    """Create a new academic year with 2 required semesters (+ optional midyear).
+    Advisers use this at year-end to roll over. All writes are audit-logged."""
+    label = StringField("School year label", validators=[DataRequired(), Length(min=4, max=20)],
+                        description="e.g. 2026-2027")
+    midyear = BooleanField("Include midyear (summer) semester")
+    submit = SubmitField("Create academic year")
 

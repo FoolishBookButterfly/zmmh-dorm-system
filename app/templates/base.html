@@ -28,8 +28,20 @@
       <div class="collapse navbar-collapse" id="nav">
         <ul class="navbar-nav ms-auto">
           <!-- Plate 2B: authority links show ONLY if permitted (occupants never see this) -->
+          {% if can("roster.view") %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('roster.rooms') }}">Rooms</a></li>
+          {% endif %}
           {% if can("role.assign") %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('roster.roles') }}">Roles</a></li>
+          {% endif %}
+          {% if can("settings.view") %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('roster.settings_page') }}">Settings</a></li>
+          {% endif %}
+          {% if can("audit.view") %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('roster.audit_log') }}">Audit</a></li>
+          {% endif %}
+          {% if can("schoolyear.manage") %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('roster.create_school_year') }}">Years</a></li>
           {% endif %}
           {% if current_user.is_authenticated %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.me') }}">Me</a></li>

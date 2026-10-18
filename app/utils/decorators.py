@@ -26,14 +26,27 @@ def _active_assignments(user):
         return []
     return RoleAssignment.query.filter(RoleAssignment.residency_id.in_(res_ids), RoleAssignment.school_year_id == year.id, RoleAssignment.is_active.is_(True)).all()
 
+def _all_assignments(user):
+    """All ACTIVE RoleAssignments for this user's person in ANY year (used for the
+    global Super-admin check only). Everyone else is still scoped to the active year."""
+    if user is None or getattr(user, "person_id", None) is None:
+        return []
+    res_ids = [r.id for r in Residency.query.filter_by(person_id=user.person_id).all()]
+    if not res_ids:
+        return []
+    return RoleAssignment.query.filter(RoleAssignment.residency_id.in_(res_ids),
+                                       RoleAssignment.is_active.is_(True)).all()
+
+
 def has_permission(user, permission):
-    """True if user may do permission (e.g. role.assign). Super-admin always True."""
+    """True if user may do permission (e.g. role.assign). Super-admin always True --
+    checked GLOBALLY (any year) so switching the active year can never lock out an admin."""
     if user is None or not getattr(user, "is_authenticated", False):
         return False
-    assignments = _active_assignments(user)
-    for a in assignments:
+    for a in _all_assignments(user):
         if a.role is not None and a.role.name == SUPERADMIN_ROLE:
             return True
+    assignments = _active_assignments(user)
     granted_by_role = any(a.role is not None and a.role.permissions and permission in a.role.permissions for a in assignments)
     now = datetime.now(timezone.utc).replace(tzinfo=None)  # naive UTC matches DateTime columns
     res_ids = list(set(a.residency_id for a in assignments))

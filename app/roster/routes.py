@@ -10,7 +10,7 @@ from app import db  # commit rows
 from app.roster.models import Residency, SchoolYear, Role, RoleAssignment, PermissionGrant, AuditLog
 from app.roster.models import Person, User, Semester, Room, RoomAssignment  # Step 3b: roster + rooms + import
 from app.roster.forms import RoleForm, GrantForm, RevokeGrantForm, KNOWN_PERMISSIONS
-from app.roster.forms import RoomForm, AssignmentForm, ImportForm, CommitImportForm, SettingsSaveForm  # Step 3b + 1.5: forms
+from app.roster.forms import RoomForm, AssignmentForm, ImportForm, CommitImportForm, SettingsSaveForm, SchoolYearForm  # Step 3b + 1.5: forms
 from app.roster.models import Setting  # 1.5: settings screen reads/writes Setting rows
 from app.roster.default_settings import SETTINGS as SETTINGS_META  # 1.5: labels/types/bounds come from the catalog
 from app.utils.decorators import permission_required, has_permission  # Step 1 central gate
@@ -33,21 +33,29 @@ def _active_year():
 @login_required
 @permission_required("role.assign")
 def roles():
-    """List every occupant of the active year with active-role pills + Edit links."""
+    """List every occupant of the active year with active-role pills + Edit links.
+    Deactivated accounts (User.is_active=False) are shown separately below active occupants."""
     year = _active_year()
     if year is None:
         flash("No active school year -- run seed_roles.py in flask shell first.", "warning")
         return redirect(url_for("auth.me"))
     q = (request.args.get("q") or "").strip()  # optional name filter (?q=juan)
-    rows = []
+    show = (request.args.get("show") or "active").strip()  # active | inactive
+    rows, inactive_rows = [], []
     for res in Residency.query.filter_by(school_year_id=year.id).order_by(Residency.id).all():
         person = res.person
         if q and q.lower() not in (person.name or "").lower():
             continue
         active = sorted(ra.role.name for ra in res.role_assignments
                         if ra.is_active and ra.school_year_id == year.id and ra.role is not None)
-        rows.append({"res": res, "person": person, "roles": active})
-    return render_template("roster/roles.html", rows=rows, year=year, q=q)
+        entry = {"res": res, "person": person, "roles": active, "is_active": res.person.user.is_active if res.person.user else True}
+        if entry["is_active"]:
+            rows.append(entry)
+        else:
+            inactive_rows.append(entry)
+    if show == "inactive":
+        return render_template("roster/roles.html", rows=inactive_rows, year=year, q=q, show="inactive")
+    return render_template("roster/roles.html", rows=rows, year=year, q=q, show="active")
 
 
 @roster_bp.route("/admin/roles/<int:residency_id>", methods=["GET", "POST"])
@@ -155,20 +163,26 @@ from flask import Response, send_file  # CSV download responses
 
 
 def _occupants(year_id, include_inactive=False):
-    """Active-year residencies, excluding staff anchors (advisers are not counted as occupants)."""
+    """Active-year residencies, excluding staff anchors (advisers are not counted as occupants).
+    Also excludes deactivated users unless include_inactive=True (for audit/history views)."""
     q = Residency.query.filter_by(school_year_id=year_id)
+    q = q.filter(Residency.status != "staff")
     if not include_inactive:
-        q = q.filter(Residency.status != "staff")
+        q = q.join(Person, Residency.person_id == Person.id).join(User, User.person_id == Person.id).filter(User.is_active == True)
     return q.order_by(Residency.id).all()
 
 
 def _room_fill(room, semester_id, year_id):
-    """Assignments in this room for one semester with active occupants (None slots = vacancies)."""
+    """Assignments in this room for one semester with active occupants (None slots = vacancies).
+    Excludes deactivated users so former occupants don't count against capacity."""
     rows = RoomAssignment.query.filter_by(room_id=room.id, semester_id=semester_id).all()
     out = []
     for a in rows:
-        res = Residency.query.get(a.residency_id)
+        res = db.session.get(Residency, a.residency_id)
         if res is None or res.school_year_id != year_id or res.status == "staff":
+            continue
+        # Exclude deactivated users
+        if res.person.user is not None and not res.person.user.is_active:
             continue
         out.append({"assignment": a, "person": res.person, "residency": res})
     return out
@@ -177,7 +191,7 @@ def _room_fill(room, semester_id, year_id):
 def _current_big_brod(room_id, semester_id, year_id):
     """The single Big Brod for a room+semester, or None (enforced unique below)."""
     for a in RoomAssignment.query.filter_by(room_id=room_id, semester_id=semester_id, is_big_brod=True).all():
-        res = Residency.query.get(a.residency_id)
+        res = db.session.get(Residency, a.residency_id)
         if res is not None and res.school_year_id == year_id and res.status != "staff":
             return a
     return None
@@ -595,6 +609,29 @@ def deactivate_account(user_id):
     flash("Account deactivated: %s (@%s)" % (target.person.name, target.username), "success")
     return redirect(request.referrer or url_for("roster.roles"))
 
+
+@roster_bp.route("/admin/users/<int:user_id>/reactivate", methods=["POST"])
+@login_required
+@permission_required("role.assign")
+def reactivate_account(user_id):
+    """Reactivate a previously deactivated account (spec 5.1: reversibility).
+    Advisers and super-admin can do this. Soft-delete is never permanent."""
+    target = db.session.get(User, user_id)
+    if target is None:
+        flash("User not found.", "danger")
+        return redirect(request.referrer or url_for("roster.roles", show="inactive"))
+    if target.is_active:
+        flash("Account is already active.", "info")
+        return redirect(request.referrer or url_for("roster.roles", show="inactive"))
+    _audit("user.reactivate", "user", target.id,
+           old=json.dumps({"is_active": False}),
+           new=json.dumps({"is_active": True}),
+           reason="Reactivated by %s" % current_user.username)
+    target.is_active = True
+    db.session.commit()
+    flash("Account reactivated: %s (@%s)" % (target.person.name, target.username), "success")
+    return redirect(request.referrer or url_for("roster.roles"))
+
 # Validation guard-rails (percentages for w_* keys; explicit ranges for the rest).
 # These bound INPUTS -- the domain values themselves live in the Setting TABLE (spec section 7).
 _INT_BOUNDS = {"quorum_min": (1, 13), "cutoff_failed": (1, 100), "cap_retained": (1, 130),
@@ -673,6 +710,126 @@ def settings_page():
 
     return render_template("roster/settings.html", groups=_SETTINGS_GROUPS, meta=SETTINGS_META,
                            current=current, missing=missing, save_form=save_form)
+
+
+@roster_bp.route("/admin/school-year", methods=["GET", "POST"])
+@login_required
+@permission_required("schoolyear.manage")
+def create_school_year():
+    """Academic year + semester management (spec section 3, 5.2: Adviser holds schoolyear.manage).
+    Lists all years with their semesters; exactly one active year and one active semester
+    per year (activating one deactivates the rest, audit-logged). New years start inactive
+    with Sem 1 + Sem 2 (+ optional Midyear); the adviser activates semester-by-semester.
+    NOTE: no data is deleted or moved by activation -- per-semester tables (Phase 2+)
+    key off semester_id, so activating a semester just changes what new records attach to."""
+    form = SchoolYearForm()
+    if request.method == "POST" and form.validate_on_submit():
+        label = form.label.data.strip()
+        if SchoolYear.query.filter_by(label=label).first() is not None:
+            flash("School year '%s' already exists." % label, "danger")
+            return redirect(url_for("roster.create_school_year"))
+        yr = SchoolYear(label=label, is_active=False)
+        db.session.add(yr)
+        db.session.flush()  # assign yr.id before children
+        sems = [("Sem 1", False), ("Sem 2", False)]
+        if form.midyear.data:
+            sems.append(("Midyear", False))
+        for name, active in sems:
+            db.session.add(Semester(school_year_id=yr.id, name=name, is_active=active))
+        _audit("schoolyear.create", "school_year", yr.id,
+               new=json.dumps({"label": label, "semesters": [s[0] for s in sems]}),
+               reason="academic year created by %s" % current_user.username)
+        db.session.commit()
+        flash("Created school year '%s' with %d semester(s). Activate it below when ready."
+              % (label, len(sems)), "success")
+        return redirect(url_for("roster.create_school_year"))
+
+    years = SchoolYear.query.order_by(SchoolYear.id).all()
+    year_rows = []
+    for y in years:
+        sems = Semester.query.filter_by(school_year_id=y.id).order_by(Semester.id).all()
+        year_rows.append({"year": y, "semesters": sems,
+                          "resident_count": Residency.query.filter_by(school_year_id=y.id).count()})
+    # who currently sees what (helps the activating adviser sanity-check before switching)
+    active_year = next((y for y in years if y.is_active), None)
+    active_sem = None
+    if active_year is not None:
+        active_sem = next((s for s in Semester.query.filter_by(school_year_id=active_year.id).all()
+                           if s.is_active), None)
+    return render_template("roster/create_school_year.html", form=form, year_rows=year_rows,
+                           active_year=active_year, active_sem=active_sem)
+
+
+@roster_bp.route("/admin/school-year/<int:year_id>/activate", methods=["POST"])
+@login_required
+@permission_required("schoolyear.manage")
+def activate_school_year(year_id):
+    """Make one year active (deactivates the rest). Semester choice is separate, below.
+    The flipping adviser keeps working: their own active Adviser role is carried into the
+    new year (audit-logged) so activation never strands them on a 403 page. Other roles
+    are per-year by design -- the post-Phase-7 rollover wizard handles full officer turnover."""
+    target = SchoolYear.query.get_or_404(year_id)
+    others = SchoolYear.query.filter(SchoolYear.id != target.id, SchoolYear.is_active.is_(True)).all()
+    _audit("schoolyear.activate", "school_year", target.id,
+           old=json.dumps({"was_active": target.is_active}),
+           new=json.dumps({"was_active": True, "deactivated": [o.label for o in others]}),
+           reason="activated by %s" % current_user.username)
+    for o in others:
+        o.is_active = False
+    target.is_active = True
+    adviser_role = Role.query.filter_by(name="Adviser").first()
+    if adviser_role is not None:
+        my_residencies = Residency.query.filter_by(person_id=current_user.person_id,
+                                                   school_year_id=target.id).all()
+        mine_old = RoleAssignment.query.join(
+            Residency, RoleAssignment.residency_id == Residency.id
+        ).filter(Residency.person_id == current_user.person_id,
+                 RoleAssignment.role_id == adviser_role.id,
+                 RoleAssignment.is_active.is_(True)).first()
+        if mine_old is not None:
+            if not my_residencies:
+                carried_res = Residency(person_id=current_user.person_id,
+                                        school_year_id=target.id, status="active",
+                                        joined_at=_date.today())
+                db.session.add(carried_res)
+                db.session.flush()
+                my_residencies = [carried_res]
+            already = RoleAssignment.query.filter_by(residency_id=my_residencies[0].id,
+                                                     role_id=adviser_role.id,
+                                                     school_year_id=target.id,
+                                                     is_active=True).first()
+            if already is None:
+                db.session.add(RoleAssignment(residency_id=my_residencies[0].id,
+                                              role_id=adviser_role.id,
+                                              school_year_id=target.id, is_active=True,
+                                              assigned_by=current_user.id))
+                _audit("role.assign", "role_assignment", my_residencies[0].id,
+                       new=json.dumps({"role": "Adviser", "carried_on_activation": target.label}),
+                       reason="actor's own Adviser carried on year activation")
+    db.session.commit()
+    flash("Active year is now '%s'." % target.label, "success")
+    return redirect(url_for("roster.create_school_year"))
+
+
+@roster_bp.route("/admin/semester/<int:semester_id>/activate", methods=["POST"])
+@login_required
+@permission_required("schoolyear.manage")
+def activate_semester(semester_id):
+    """Make one semester active within its year (deactivates siblings in that year only).
+    Guard: semester's year should be the active year, else the adviser gets a warning prompt first."""
+    target = Semester.query.get_or_404(semester_id)
+    year = SchoolYear.query.get(target.school_year_id)
+    if year is not None and not year.is_active:
+        flash("Heads up: '%s' is not the active year -- activate the year too if you meant to switch."
+              % year.label, "warning")
+    for s in Semester.query.filter_by(school_year_id=target.school_year_id).all():
+        s.is_active = (s.id == target.id)
+    _audit("semester.activate", "semester", target.id,
+           new=json.dumps({"year": year.label if year else None, "semester": target.name}),
+           reason="activated by %s" % current_user.username)
+    db.session.commit()
+    flash("Active semester is now '%s'." % target.name, "success")
+    return redirect(url_for("roster.create_school_year"))
 
 
 
