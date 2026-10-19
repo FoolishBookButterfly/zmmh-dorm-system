@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}History {{ rule.code }} - ZmMH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">History: {{ rule.code }} - {{ rule.title }} (v{{ rule.version }})</h1>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('violations.rules') }}">Back to rules</a>
+</div>
+<div class="card"><div class="table-responsive">
+<table class="table mb-0 small">
+  <thead><tr><th>#</th><th>Changed at</th><th>By (user id)</th><th>Reason</th><th>Before-image</th></tr></thead>
+  <tbody>
+  {% for v in versions %}
+  <tr><td>{{ v.id }}</td><td>{{ v.changed_at }}</td><td>{{ v.changed_by or "-" }}</td><td>{{ v.reason or "-" }}</td><td><pre class="mb-0 small">{{ v.snapshot | tojson(indent=1) }}</pre></td></tr>
+  {% else %}
+  <tr><td colspan="5" class="text-muted">No edits yet -- this is the seeded v1.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div></div>
+<p class="small text-muted mt-2">Snapshots are append-only: edits never mutate history.</p>
+{% endblock %}

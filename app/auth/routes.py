@@ -8,6 +8,7 @@ from app import db  # commit Person/User/Residency/AuditLog rows
 # Exact 1.1 model names -- DO NOT rename
 from app.roster.models import Person, User, SchoolYear, Semester, Residency, Role, RoleAssignment, Room, AuditLog  # + Room for /seed-rooms
 from app.roster.models import Setting  # + Setting for /seed-settings
+from app.violations.models import ViolationRule  # + ViolationRule for /seed-hrar (Phase 2.1)
 from app.utils.decorators import permission_required  # Step 1 gate (adviser/super-admin only for create)
 from app.utils.email import send_temp_password, send_reset_link  # Step 2 mailer (dev console print)
 from app.auth.forms import LoginForm, ChangePasswordForm, CreateAccountForm, ForgotForm, ResetForm, BootstrapForm  # Step 3 + bootstrap forms
@@ -269,4 +270,68 @@ def seed_settings():
                             reason="seeded: " + ", ".join(created)))
     db.session.commit()
     return "Seeded settings: " + ", ".join(created) + " (%d total)" % Setting.query.count()
+
+
+@auth_bp.route("/seed-hrar")
+def seed_hrar():
+    """ONE-SHOT HRAR seeder for shell-less hosts (Render). Sibling of /seed-roles.
+
+    Safe to keep forever: 404s once ALL 57 catalog codes exist AND stored fields
+    match the catalog (re-visits self-heal drifted rows, then go inert again).
+    Also ensures auto_confirm_hours=48 exists.
+    Creates only deterministic ViolationRule ROWS the code already defines;
+    logging/confirming still needs login + violations.* via the violations pages.
+    """
+    from app.roster.default_hrar import RULES, SECTION_TITLES  # local import: one catalog
+    # Ensure the auto-confirm window setting exists too.
+    auto = Setting.query.filter_by(key="auto_confirm_hours").first()
+    if auto is None:
+        db.session.add(Setting(key="auto_confirm_hours", value="48",
+                               description="Auto-confirm window (hours) for minor violations"))
+    existing = {r.code: r for r in ViolationRule.query.all()}
+
+    def _fields(code, meta):
+        return dict(
+            section=meta["section"],
+            section_title=SECTION_TITLES.get(meta["section"], ""),
+            title=meta["title"], description=meta["description"],
+            severity=meta["severity"], points=meta.get("points") or 0,
+            fine_type=meta["fine"].get("type", "none"),
+            fine_amount=meta["fine"].get("amount_php", 0) or 0,
+            fine_meta=meta["fine"], escalation=meta.get("escalation", []),
+            who_can_log=meta.get("who_can_log", []),
+            is_confidential=bool(meta.get("confidential", False)),
+            confirmation=meta.get("confirmation", "adviser"),
+            applies_when=meta.get("applies_when", "always"),
+            review_note=meta.get("review"),
+            requires_victim_complaint=bool(meta.get("requires_victim_complaint", False)),
+            penalty_options=meta.get("penalty_options"),
+            other_penalty=meta.get("other_penalty"),
+            auto_source=meta.get("auto_source"), note=meta.get("note"),
+        )
+
+    missing = [c for c in RULES if c not in existing]
+    stale = [c for c in RULES if c in existing
+             and any(getattr(existing[c], k) != v for k, v in _fields(c, RULES[c]).items())]
+    if not missing and not stale and auto is not None:
+        abort(404)  # catalog complete and current -> permanently inert
+    created, refreshed = [], []
+    for code in missing:
+        db.session.add(ViolationRule(code=code, **_fields(code, RULES[code])))
+        created.append(code)
+    for code in stale:
+        for k, v in _fields(code, RULES[code]).items():
+            setattr(existing[code], k, v)
+        refreshed.append(code)
+    db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
+                            action="seed.hrar", table_name="violation_rule", record_id=None,
+                            reason="seeded: " + ", ".join(created)
+                                   + ("; refreshed: " + ", ".join(refreshed) if refreshed else "")))
+    db.session.commit()
+    parts = []
+    if created:
+        parts.append("Seeded rules: " + ", ".join(created))
+    if refreshed:
+        parts.append("Refreshed rules: " + ", ".join(refreshed))
+    return "; ".join(parts) + " (%d total)" % ViolationRule.query.count()
 

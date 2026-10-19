@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "add" %}Add rule{% else %}Edit {{ rule.code }}{% endif %} - ZmMH{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">{% if mode == "add" %}Add HRAR rule{% else %}Edit rule {{ rule.code }} (v{{ rule.version }}){% endif %}</h1>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+<form method="post" class="card p-3">
+  {{ form.hidden_tag() }}
+  <div class="row">
+    <div class="col-md-3 mb-2"><label class="form-label">{{ form.code.label }}</label>{{ form.code(class="form-control", readonly=(mode == "edit")) }}{% for e in form.code.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-3 mb-2"><label class="form-label">{{ form.section.label }}</label>{{ form.section(class="form-control") }}{% for e in form.section.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-6 mb-2"><label class="form-label">{{ form.title.label }}</label>{{ form.title(class="form-control") }}{% for e in form.title.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  </div>
+  <div class="mb-2"><label class="form-label">{{ form.description.label }}</label>{{ form.description(class="form-control", rows=3) }}</div>
+  <div class="row">
+    <div class="col-md-4 mb-2"><label class="form-label">{{ form.severity.label }}</label>{{ form.severity(class="form-control") }}</div>
+    <div class="col-md-4 mb-2"><label class="form-label">{{ form.points.label }}</label>{{ form.points(class="form-control") }}{% for e in form.points.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-4 mb-2"><label class="form-label">{{ form.confirmation.label }}</label>{{ form.confirmation(class="form-select") }}</div>
+  </div>
+  <div class="row">
+    <div class="col-md-3 mb-2"><label class="form-label">{{ form.fine_type.label }}</label>{{ form.fine_type(class="form-select") }}</div>
+    <div class="col-md-3 mb-2"><label class="form-label">{{ form.fine_amount.label }}</label>{{ form.fine_amount(class="form-control") }}{% for e in form.fine_amount.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-3 mb-2"><label class="form-label">{{ form.applies_when.label }}</label>{{ form.applies_when(class="form-select") }}</div>
+    <div class="col-md-3 mb-2"><label class="form-label">{{ form.who_can_log.label }}</label>{{ form.who_can_log(class="form-control", placeholder="adviser, sa, justice_head") }}{% for e in form.who_can_log.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  </div>
+  <div class="mb-2"><label class="form-label">{{ form.escalation_text.label }}</label>{{ form.escalation_text(class="form-control", rows=3, placeholder="1: warning\n2: probation\n3: flag_expulsion") }}<div class="form-text">Actions allowed: warning, verbal_warning, probation, flag_expulsion, confiscation, no_fan_one_week, hard_labor, move_out. The system only FLAGS probation/expulsion -- advisers decide.</div></div>
+  <div class="row">
+    <div class="col-md-4 mb-2 form-check ms-2">{{ form.is_confidential(class="form-check-input") }}<label class="form-check-label">{{ form.is_confidential.label }}</label></div>
+    <div class="col-md-4 mb-2 form-check ms-2">{{ form.is_active(class="form-check-input") }}<label class="form-check-label">{{ form.is_active.label }}</label></div>
+  </div>
+  <div class="mb-3"><label class="form-label">{{ form.change_reason.label }}</label>{{ form.change_reason(class="form-control", placeholder="Why is this rule changing? (audited)") }}{% for e in form.change_reason.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div>{{ form.save_rule(class="btn btn-primary", style="background-color:#5E1A0E;border-color:#5E1A0E;") }} <a class="btn btn-outline-secondary" href="{{ url_for('violations.rules') }}">Cancel</a></div>
+</form>
+{% if mode == "edit" %}<p class="small text-muted mt-2">Code is locked. Saving snapshots the before-image into RuleVersion + bumps v{{ rule.version }} to v{{ rule.version + 1 }} + writes audit.</p>{% endif %}
+{% endblock %}

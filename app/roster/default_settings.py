@@ -27,6 +27,7 @@ SETTINGS = {
     "danger_margin":   {"value": "3", "label": "In-danger margin", "type": "int", "group": "Status rules", "help": "Decision 3: alert when provisional <= cutoff + margin (70+3 = 73)."},
     # -- violations (decisions 5 + 7)
     "dispute_days":    {"value": "3", "label": "Dispute window (days)", "type": "int", "group": "Violations", "help": "Decision 7: occupant may dispute within this many days of notice."},
+    "auto_confirm_hours": {"value": "48", "label": "Auto-confirm window (hours)", "type": "int", "group": "Violations", "help": "Decision 5: minor violations (<=3 pts, no escalation, fine<50, not confidential) become effective after this many hours unless rejected/disputed."},
     # -- finance (spec 1 + 5.5)
     "maintenance_fee": {"value": "700", "label": "Maintenance fee per semester (PHP)", "type": "int", "group": "Finance", "help": "Auto-charged each semester; partial payment allowed."},
 }

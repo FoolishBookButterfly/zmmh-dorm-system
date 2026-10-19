@@ -78,9 +78,14 @@ def create_app():
     from app.roster.routes import roster_bp  # noqa: E402
     app.register_blueprint(roster_bp)
 
+    # Phase 2.2: violations blueprint -> /violations/rules (guarded inside)
+    from app.violations.routes import violations_bp  # noqa: E402
+    app.register_blueprint(violations_bp)
+
     # Import models so Flask-Migrate sees the tables (no-op at runtime, needed for autogenerate)
-    # Phase 1.1: roster models only; later phases add violations/finance/... imports here
+    # Phase 1.1: roster models; Phase 2.1: violations models (later: finance/... here too)
     from app.roster import models as roster_models  # noqa: E402,F401
+    from app.violations import models as violations_models  # noqa: E402,F401 -- Phase 2.1 HRAR tables
 
     @app.before_request
     def _force_password_change():

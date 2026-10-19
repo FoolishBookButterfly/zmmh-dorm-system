@@ -43,6 +43,12 @@
           {% if can("schoolyear.manage") %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('roster.create_school_year') }}">Years</a></li>
           {% endif %}
+          {% if can("violations.view") %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('violations.rules') }}">HRAR</a></li>
+          {% endif %}
+          {% if can("violations.log") %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('violations.log_violation') }}">Log violation</a></li>
+          {% endif %}
           {% if current_user.is_authenticated %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.me') }}">Me</a></li>
           <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a></li>

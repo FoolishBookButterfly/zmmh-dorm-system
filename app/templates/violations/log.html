@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Log violation - ZmMH{% endblock %}
+{% block content %}
+<h1 class="h4 mb-1">Log a violation</h1>
+<p class="small text-muted">One rule, one or more occupants. Only the rules you may log appear in the dropdown (committee + confidential filters, Decision 7). Minors auto-confirm after {{ auto_hours }}h unless disputed.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+<form method="post" enctype="multipart/form-data" class="card p-3">
+  {{ form.hidden_tag() }}
+  <div class="mb-2"><label class="form-label">{{ form.rule_id.label }}</label>{{ form.rule_id(class="form-select") }}{% for e in form.rule_id.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="mb-2"><label class="form-label">{{ form.occupants.label }}</label>{{ form.occupants(class="form-select", size=8) }}<div class="form-text">Hold Ctrl/Cmd to pick several. One record per occupant, same incident.</div>{% for e in form.occupants.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="row">
+    <div class="col-md-3 mb-2"><label class="form-label">{{ form.date.label }}</label>{{ form.date(class="form-control", type="date") }}{% for e in form.date.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+    <div class="col-md-3 mb-2"><label class="form-label">{{ form.time.label }}</label>{{ form.time(class="form-control", type="time") }}</div>
+    <div class="col-md-6 mb-2"><label class="form-label">{{ form.place.label }}</label>{{ form.place(class="form-control", placeholder="Kitchen, lobby, Room Melbourne...") }}</div>
+  </div>
+  <div class="mb-2"><label class="form-label">{{ form.notes.label }}</label>{{ form.notes(class="form-control", rows=3) }}</div>
+  <div class="mb-2"><label class="form-label">{{ form.photo.label }}</label>{{ form.photo(class="form-control") }}<div class="form-text">Compressed to max 1280px before saving. One photo covers every occupant of this incident.</div>{% for e in form.photo.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}</div>
+  <div class="mb-3 form-check ms-2">{{ form.is_anonymous(class="form-check-input") }}<label class="form-check-label">{{ form.is_anonymous.label }}</label></div>
+  <div>{{ form.log_violation(class="btn btn-primary", style="background-color:#5E1A0E;border-color:#5E1A0E;") }} <a class="btn btn-outline-secondary" href="{{ url_for('violations.rules') }}">Cancel</a></div>
+</form>
+<p class="small text-muted mt-2">offense_count = prior Confirmed count for this rule+semester+1. Confidential rules appear only for advisers + Justice head + President. Computed rules (3.B) never appear here.</p>
+{% endblock %}
