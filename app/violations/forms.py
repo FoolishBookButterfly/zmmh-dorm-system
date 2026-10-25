@@ -130,6 +130,8 @@ class ReviewActionForm(FlaskForm):
     """Phase 2.4: adviser Confirm / Dismiss a Logged violation (reason required)."""
     record_id = HiddenField(validators=[DataRequired()])
     reason = TextAreaField("Reason (required, audited)", validators=[DataRequired(), Length(max=500)])
+    confirm = SubmitField("Confirm")
+    dismiss = SubmitField("Dismiss")
 class DisputeDecisionForm(FlaskForm):
     """Phase 2.5: President + advisers decide a disputed violation (reason required)."""
     record_id = HiddenField(validators=[DataRequired()])
