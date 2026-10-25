@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-3">
+  <h1 class="h4 mb-3">Dispute Decision Queue</h1>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+  {% if not records %}
+  <p class="text-muted">No disputes pending.</p>
+  {% else %}
+  {% for rec in records %}
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="d-flex justify-content-between mb-2">
+        <div>
+          <strong>{{ rec.rule.code }}</strong> — {{ rec.rule.title }}
+          {% if rec.rule.is_confidential %}<span class="badge bg-dark ms-1">confidential</span>{% endif %}
+          <div class="small text-muted">Offense #{{ rec.offense_count }} · {{ rec.date }} · {{ rec.place or '' }}</div>
+          {% if rec.notes %}<div class="small">{{ rec.notes }}</div>{% endif %}
+        </div>
+      </div>
+      {% set d = rec.disputes[-1] if rec.disputes else None %}
+      {% if d %}
+      <div class="small mb-2"><strong>Dispute reason:</strong> {{ d.reason }}</div>
+      {% endif %}
+      <form method="post" action="{{ url_for('violations.dispute_decide') }}">
+        {{ form.csrf_token }}
+        <input type="hidden" name="record_id" value="{{ rec.id }}">
+        <div class="mb-2">
+          <textarea name="reason" class="form-control form-control-sm" rows="2" placeholder="Decision reason (required)" required></textarea>
+        </div>
+        <button type="submit" name="confirm" value="Uphold (Confirmed)" class="btn btn-sm btn-success">Uphold</button>
+        <button type="submit" name="dismiss" value="Dismiss" class="btn btn-sm btn-danger">Dismiss</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

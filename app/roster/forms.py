@@ -23,6 +23,7 @@ class RoleForm(FlaskForm):
 # Suggestions shown in the grant textbox (datalist). New perms get added here as phases ship.
 KNOWN_PERMISSIONS = [
     "roster.view", "roster.export", "roster.view_private", "roster.edit", "role.assign",
+    "schoolyear.manage",
     "finance.view", "finance.edit", "finance.receipts", "finance.expenses",
     "violations.view", "violations.log", "violations.confirm",
     "events.view", "events.edit", "events.attendance",
@@ -83,12 +84,19 @@ class CommitImportForm(FlaskForm):
 
 
 class SettingsSaveForm(FlaskForm):
-    """CSRF-only carrier for the grouped settings posts (inputs are raw named by setting key).
+    """CSRF-only carrier for the grouped settings posts.
+    Flask-WTF provides csrf_token automatically; no need to redefine it.
+    The route reads named inputs directly (save_form.validate_on_submit()) which
+    still runs CSRF validation. The template includes {{ save_form.csrf_token }}.
+    """
+    pass
 
-    WHY: our Flask config disables CSRF (WTF_CSRF_ENABLED = False) for cs50x-era routes,
-    so Flask-WTF never injects csrf_token into the form. Rendering form.csrf_token()
-    would print '' -- so we attach the standard_hidden field ourselves. The route still
-    calls validate_on_submit() which is a no-op when CSRF is off, but the hidden input
-    guarantees the page always emits a valid csrf token (browsers + any strict proxy)."""
-    csrf_token = HiddenField("csrf token carrier")
+
+class SchoolYearForm(FlaskForm):
+    """Create a new academic year with 2 required semesters (+ optional midyear).
+    Advisers use this at year-end to roll over. All writes are audit-logged."""
+    label = StringField("School year label", validators=[DataRequired(), Length(min=4, max=20)],
+                        description="e.g. 2026-2027")
+    midyear = BooleanField("Include midyear (summer) semester")
+    submit = SubmitField("Create academic year")
 

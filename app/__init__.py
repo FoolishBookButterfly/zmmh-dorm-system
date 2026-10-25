@@ -9,6 +9,7 @@ from flask_login import LoginManager  # login: current_user + @login_required vs
 from flask_mail import Mail  # email: temp passwords + notifications (spec 5.1)
 from dotenv import load_dotenv  # loads .env into os.getenv()
 from sqlalchemy import MetaData  # lets us name FK constraints (SQLite batch alters REQUIRE names)
+from flask_wtf.csrf import CSRFProtect  # CSRF: protects all POST forms (Flask-WTF)
 
 # Load .env BEFORE reading config (so os.getenv sees SECRET_KEY, DATABASE_URL locally)
 load_dotenv()
@@ -27,6 +28,7 @@ db = SQLAlchemy(metadata=MetaData(naming_convention=_naming_convention))  # ORM 
 migrate = Migrate()  # handles `flask db migrate/upgrade`
 login_manager = LoginManager()  # handles login sessions + unauthorized redirects
 mail = Mail()  # handles Flask-Mail send (configured but unused until Phase 1)
+csrf = CSRFProtect()  # globally protects all POST forms via Flask-WTF (registers csrf_token in Jinja)
 
 
 def create_app():
@@ -48,6 +50,7 @@ def create_app():
     migrate.init_app(app, db)  # migrations now track db.Model changes
     login_manager.init_app(app)  # login now guards routes
     mail.init_app(app)  # mail ready for Phase 1 temp-password emails
+    csrf.init_app(app)  # Flask-WTF CSRF on all POSTs (registers csrf_token() in Jinja)
 
     # Where @login_required sends anonymous users (was redirect to apology in CS50x)
     login_manager.login_view = "auth.login"
@@ -75,9 +78,15 @@ def create_app():
     from app.roster.routes import roster_bp  # noqa: E402
     app.register_blueprint(roster_bp)
 
+    # Phase 2.2: violations blueprint -> /violations/rules (guarded inside)
+    from app.violations.routes import violations_bp, jobs_bp  # noqa: E402
+    app.register_blueprint(violations_bp)
+    app.register_blueprint(jobs_bp)  # /jobs/auto-confirm (cron)
+
     # Import models so Flask-Migrate sees the tables (no-op at runtime, needed for autogenerate)
-    # Phase 1.1: roster models only; later phases add violations/finance/... imports here
+    # Phase 1.1: roster models; Phase 2.1: violations models (later: finance/... here too)
     from app.roster import models as roster_models  # noqa: E402,F401
+    from app.violations import models as violations_models  # noqa: E402,F401 -- Phase 2.1 HRAR tables
 
     @app.before_request
     def _force_password_change():
@@ -106,5 +115,19 @@ def create_app():
         def can(permission):
             return has_permission(current_user, permission)
         return {"can": can}
+
+    @app.context_processor
+    def _inject_can_decide_dispute():
+        """Jinja helper: may current user decide disputes (advisers + President)."""
+        def can_decide_dispute():
+            try:
+                from app.utils.decorators import has_permission
+                if has_permission(current_user, "violations.confirm"):
+                    return True
+                from app.violations.routes import _my_role_names
+                return "President" in _my_role_names()
+            except Exception:
+                return False
+        return {"can_decide_dispute": can_decide_dispute}
 
     return app  # factory RETURNS the app -- run.py assigns it to `app`

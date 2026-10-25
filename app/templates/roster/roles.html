@@ -6,23 +6,42 @@
   <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auth.me') }}">Back to Me</a>
 </div>
 {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+ <!-- Tabs: Active vs Inactive occupants (adviser can toggle, spec 5.1 reversibility) -->
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {% if show == 'active' %}active{% endif %}" href="{{ url_for('roster.roles', q=q, show='active') }}">Active</a></li>
+  <li class="nav-item"><a class="nav-link {% if show == 'inactive' %}active{% endif %}" href="{{ url_for('roster.roles', q=q, show='inactive') }}">Deactivated</a></li>
+</ul>
 <form class="mb-2" method="get"><div class="input-group">
   <input class="form-control" name="q" value="{{ q or '' }}" placeholder="Filter by name...">
+  <input type="hidden" name="show" value="{{ show }}">
   <button class="btn btn-primary" style="background-color:#5E1A0E;border-color:#5E1A0E;">Filter</button>
 </div></form>
 <div class="card"><div class="table-responsive">
 <table class="table mb-0">
-  <thead><tr><th>Occupant</th><th>Email</th><th>Roles (active)</th><th></th></tr></thead>
+  <thead><tr><th>Occupant</th><th>Email</th><th>Roles (active)</th><th><th class="text-end">Actions</th></tr></thead>
   <tbody>
   {% for row in rows %}
-  <tr>
-    <td>{{ row.person.name }}</td>
+  <tr class="{% if not row.is_active %}table-secondary{% endif %}">
+    <td>{{ row.person.name }}{% if not row.is_active %} <span class="badge bg-secondary">deactivated</span>{% endif %}</td>
     <td class="small text-muted">{{ row.person.email }}</td>
     <td>{% for r in row.roles %}<span class="badge me-1" style="background-color:#5E1A0E;">{{ r }}</span>{% else %}<span class="text-muted small">none</span>{% endfor %}</td>
-    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('roster.role_edit', residency_id=row.res.id) }}">Edit</a></td>
+    <td class="text-end">
+      {% if row.is_active and row.person.user %}
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('roster.role_edit', residency_id=row.res.id) }}">Edit</a>
+      <form method="post" action="{{ url_for('roster.deactivate_account', user_id=row.person.user.id) }}" style="display:inline" onsubmit="return confirm('Deactivate {{ row.person.name }}? They cannot log in until reactivated.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm btn-outline-danger">Deactivate</button>
+      </form>
+      {% elif not row.is_active and row.person.user %}
+      <form method="post" action="{{ url_for('roster.reactivate_account', user_id=row.person.user.id) }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm btn-outline-success">Reactivate</button>
+      </form>
+      {% endif %}
+    </td>
   </tr>
   {% else %}
-  <tr><td colspan="4" class="text-muted">No occupants in the active year yet.</td></tr>
+  <tr><td colspan="4" class="text-muted">No occupants here yet.</td></tr>
   {% endfor %}
   </tbody>
 </table>

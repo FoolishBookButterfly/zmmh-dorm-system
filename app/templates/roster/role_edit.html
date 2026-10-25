@@ -17,6 +17,15 @@
         {{ role_form.save_roles(class_="btn btn-primary mt-2", style="background-color:#5E1A0E;border-color:#5E1A0E;") }}
       </form>
       <p class="small text-muted mt-2 mb-0">Lockout guard: you cannot remove your own Super-admin here. Unchecking keeps history (is_active=False).</p>
+      {% if user and user.id != current_user.id %}
+      <form method="post" action="{{ url_for('roster.deactivate_account', user_id=user.id) }}" class="mt-2">
+        {{ role_form.hidden_tag() }}
+        <button type="submit" class="btn btn-sm btn-outline-danger"
+                onclick="return confirm('Deactivate this account? They will not be able to log in.')">
+          Deactivate account
+        </button>
+      </form>
+      {% endif %}
     </div></div>
   </div>
   <div class="col-12 col-lg-6">

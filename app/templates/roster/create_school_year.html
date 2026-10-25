@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}School years - ZmMH{% endblock %}
+{% block content %}
+<h1 class="h4">School years &amp; semesters</h1>
+<p class="small text-muted">Exactly one active year and one active semester per year. Activating moves <b>no data</b> —
+per-semester records (Phase 2+) attach to whatever is active, so switch semester by semester.
+Fresh Blank rule (spec section 4): a new year has no residencies until the one-time import or
+admissions run; a new semester starts with zero room assignments until rooms are re-done.</p>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+
+<div class="alert alert-info py-2 small">Currently active: <b>{% if active_year %}{{ active_year.label }}{% else %}none{% endif %}</b>
+/ <b>{% if active_sem %}{{ active_sem.name }}{% else %}none{% endif %}</b></div>
+
+{% for row in year_rows %}
+<div class="card mb-3"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <h2 class="h6 mb-0">{{ row.year.label }}
+      {% if row.year.is_active %}<span class="badge bg-success">active year</span>{% endif %}
+      <span class="small text-muted">{{ row.resident_count }} residencies</span></h2>
+    {% if not row.year.is_active %}
+    <form method="post" action="{{ url_for('roster.activate_school_year', year_id=row.year.id) }}">
+      {{ form.hidden_tag() }}
+      <button class="btn btn-sm" style="background-color:#5E1A0E;color:#fff;"
+              onclick="return confirm('Make {{ row.year.label }} the active year? All pages switch to it.')">Activate year</button>
+    </form>
+    {% endif %}
+  </div>
+  <table class="table table-sm mt-2 mb-0">
+    <thead><tr><th>Semester</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for s in row.semesters %}
+    <tr>
+      <td>{{ s.name }}</td>
+      <td>{% if s.is_active %}<span class="badge bg-success">active</span>{% else %}<span class="text-muted small">inactive</span>{% endif %}</td>
+      <td class="text-end">{% if not s.is_active %}
+        <form method="post" action="{{ url_for('roster.activate_semester', semester_id=s.id) }}" style="display:inline">
+          {{ form.hidden_tag() }}
+          <button class="btn btn-sm btn-outline-secondary"
+                  {% if not row.year.is_active %}onclick="return confirm('{{ row.year.label }} is NOT the active year. Activate just this semester anyway?')"{% endif %}>Activate</button>
+        </form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% else %}
+<p class="text-muted">No school years yet. Create the first one below.</p>
+{% endfor %}
+
+<div class="card"><div class="card-body">
+  <h2 class="h6">Create academic year</h2>
+  <p class="small text-muted">Creates the year <b>inactive</b> with Sem 1 + Sem 2 (+ optional Midyear, also inactive).
+  Roll it into use via Activate above. Full status rollover (Retained continue, rest become former,
+  roles cleared) arrives after Phase 7 evaluation release -- this page only manages years, not statuses.</p>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="mb-2">{{ form.label.label(class="form-label") }}{{ form.label(class="form-control", placeholder="e.g. 2026-2027") }}
+      {% if form.label.errors %}<div class="text-danger small">{{ form.label.errors[0] }}</div>{% endif %}
+      <div class="form-text">Format: YYYY-YYYY (e.g. 2026-2027)</div></div>
+    <div class="mb-3 form-check">
+      {{ form.midyear(class="form-check-input") }}
+      {{ form.midyear.label(class="form-check-label") }}
+      <div class="form-text text-muted">Check if the dorm is open for summer/Midyear residents.</div>
+    </div>
+    {{ form.submit(class="btn btn-primary") }}
+  </form>
+</div></div>
+{% endblock %}

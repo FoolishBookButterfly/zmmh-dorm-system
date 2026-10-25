@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}HRAR Rules - ZmMH{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">HRAR Rulebook ({{ total }} rules)</h1>
+  <div>
+    {% if can("violations.confirm") %}
+    <a class="btn btn-sm btn-primary" style="background-color:#5E1A0E;border-color:#5E1A0E;" href="{{ url_for('violations.rule_add') }}">Add rule</a>
+    {% endif %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('auth.me') }}">Back to Me</a>
+  </div>
+</div>
+{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+{% if hidden_count %}
+<div class="alert alert-warning py-2 small">{{ hidden_count }} confidential rule(s) hidden: advisers, Justice head and President only.</div>
+{% endif %}
+{% for sec in sections %}
+<div class="card mb-3">
+  <div class="card-header" style="background-color:#F5EFE3;"><strong>Section {{ sec.num }}</strong> <span class="text-muted small">{{ sec.title }}</span></div>
+  <div class="table-responsive">
+  <table class="table mb-0 small">
+    <thead><tr><th>Code</th><th>Title</th><th>Pts</th><th>Fine</th><th>Confirm</th><th>May log</th><th class="text-end">Actions</th></tr></thead>
+    <tbody>
+    {% for r in sec.rows %}
+    <tr class="{% if not r.is_active %}table-secondary{% endif %}">
+      <td><strong>{{ r.code }}</strong>{% if r.is_confidential %} <span class="badge bg-dark">confidential</span>{% endif %}{% if r.confirmation == "computed" %} <span class="badge bg-info">computed</span>{% endif %}{% if not r.is_active %} <span class="badge bg-secondary">retired</span>{% endif %}{% if r.review_note %} <span class="badge bg-warning text-dark">{{ r.review_note }}</span>{% endif %}</td>
+      <td>{{ r.title }}</td>
+      <td>{{ r.points }}</td>
+      <td>{% if r.fine_amount %}<span>&#8369;{{ r.fine_amount }}</span>{% if r.fine_type != "fixed" %}<span class="text-muted">/{{ r.fine_type }}</span>{% endif %}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+      <td><span class="badge {% if r.confirmation == 'auto_48h' %}bg-success{% elif r.confirmation == 'computed' %}bg-info{% else %}bg-danger{% endif %}">{{ r.confirmation }}</span></td>
+      <td class="text-muted">{{ (r.who_can_log or []) | join(", ") }}</td>
+      <td class="text-end">
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('violations.rule_history', rule_id=r.id) }}">History</a>
+        {% if can("violations.confirm") %}
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('violations.rule_edit', rule_id=r.id) }}">Edit</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<p class="text-muted">No rules yet. Run seed_hrar.py or visit /seed-hrar.</p>
+{% endfor %}
+<p class="small text-muted">Codes never change. Every edit snapshots the before-image + bumps version + writes audit. Computed rules (3.B) are never logged by hand.</p>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-3" style="max-width:700px;">
+  <h1 class="h4 mb-3">Dispute Violation</h1>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+  <div class="card mb-3">
+    <div class="card-body">
+      <div><strong>{{ rec.rule.code }}</strong> — {{ rec.rule.title }}</div>
+      <div class="small text-muted">Offense #{{ rec.offense_count }} · {{ rec.date }} · {{ rec.place or '' }}</div>
+      {% if rec.notes %}<div class="small mt-1">{{ rec.notes }}</div>{% endif %}
+      {% if rec.fine_amount %}<div class="small">Fine: PHP {{ rec.fine_amount }}</div>{% endif %}
+    </div>
+  </div>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+      <label class="form-label">Reason (required)</label>
+      {{ form.reason(class="form-control", rows=4) }}
+      {% for e in form.reason.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+    </div>
+    {{ form.file_dispute(class="btn btn-primary") }}
+    <a class="btn btn-outline-secondary ms-2" href="{{ url_for('violations.my_violations') }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

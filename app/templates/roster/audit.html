@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Audit log - ZmMH{% endblock %}
+{% block content %}
+<a class="small" href="{{ url_for('auth.me') }}">&larr; Back to Me</a>
+<h1 class="h4 mt-1">Audit log - AY {{ year.label }}</h1>
+<p class="text-muted small">Append-only trail of every score, money, role, and export change (spec section 7).</p>
+
+<form class="mb-3 row g-2" method="get">
+  <div class="col-auto">
+    <input class="form-control form-control-sm" name="q" value="{{ q or '' }}" placeholder="Search reason, table, record id...">
+  </div>
+  <div class="col-auto">
+    <input class="form-control form-control-sm" name="action" value="{{ action_filter or '' }}" placeholder="Action (e.g. role.assign)">
+  </div>
+  <div class="col-auto">
+    <input class="form-control form-control-sm" name="actor" value="{{ actor_name_filter or '' }}" placeholder="Actor name">
+  </div>
+  <div class="col-auto align-items-end">
+    <button class="btn btn-sm btn-primary" style="background-color:#5E1A0E;border-color:#5E1A0E;">Filter</button>
+    {% if q or action_filter or actor_name_filter %}
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('roster.audit_log') }}">Clear</a>
+    {% endif %}
+  </div>
+</form>
+
+<div class="table-responsive">
+  <table class="table table-sm table-hover mb-0">
+    <thead class="table-light">
+      <tr>
+        <th class="small text-uppercase">Timestamp</th>
+        <th class="small text-uppercase">Actor</th>
+        <th class="small text-uppercase">Action</th>
+        <th class="small text-uppercase">Table</th>
+        <th class="small text-uppercase">Record</th>
+        <th class="small text-uppercase">Old &rarr; New</th>
+        <th class="small text-uppercase">Reason</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in logs %}
+      <tr>
+        <td class="small text-muted">{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '' }}</td>
+        <td class="small">{{ actor_cache.get(row.actor_id, '') if row.actor_id else '<system>' }}</td>
+        <td class="small"><span class="badge bg-secondary">{{ row.action }}</span></td>
+        <td class="small text-muted">{{ row.table_name or '' }}</td>
+        <td class="small text-muted">{{ row.record_id or '' }}</td>
+        <td class="small text-muted" style="max-width:300px; word-break:break-word;">
+          {% if row.old_value %}<span class="text-muted"><code>{{ row.old_value[:80] }}</code></span>{% endif %}
+          {% if row.new_value %}<span class="text-muted"><code>{{ row.new_value[:80] }}</code></span>{% endif %}
+          {% if not row.old_value and not row.new_value %}—{% endif %}
+        </td>
+        <td class="small text-muted" style="max-width:250px; word-break:break-word;">{{ row.reason or '' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted">No audit entries yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if logs|length == 500 %}
+<p class="small text-muted">Showing most recent 500 entries.</p>
+{% endif %}
+{% endblock %}

@@ -6,6 +6,7 @@ ROLES = {
     "Super-admin": [],  # bypass by NAME in permission_required -- no perms needed
     "Adviser": [
         "roster.view", "roster.export", "roster.view_private", "roster.edit", "role.assign",
+        "schoolyear.manage",
         "finance.view", "finance.edit",
         "violations.view", "violations.log", "violations.confirm",
         "events.view", "events.edit", "cleaning.view", "cleaning.edit",
