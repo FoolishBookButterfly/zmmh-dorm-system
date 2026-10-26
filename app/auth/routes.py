@@ -195,6 +195,24 @@ def bootstrap():
         return redirect(url_for("auth.login"))
     return render_template("auth/bootstrap.html", form=form)
 
+def _seed_reason(created, refreshed=None, deleted=None):
+    """Audit-log 'reason' for seed routes, bounded to VARCHAR(255).
+
+    Uses item COUNTS rather than joined names so a 57-rule catalog (or any
+    large seed) cannot overflow audit_log.reason on PostgreSQL. SQLite ignores
+    varchar length limits, Postgres enforces them -- which is exactly why
+    /seed-hrar 500'd on Render but the joined-name string passed locally.
+    The full list of affected codes is still echoed to the browser in the
+    route response body.
+    """
+    parts = ["seeded: %d" % len(created)]
+    if refreshed:
+        parts.append("refreshed: %d" % len(refreshed))
+    if deleted:
+        parts.append("deleted: %d" % deleted)
+    return "; ".join(parts)
+
+
 @auth_bp.route("/seed-roles")
 def seed_roles():
     """ONE-SHOT role-catalog seeder for shell-less hosts (Render free tier). Sibling of /bootstrap.
@@ -218,8 +236,7 @@ def seed_roles():
         refreshed.append(name)
     db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
                             action="seed.roles", table_name="role", record_id=None,
-                            reason="seeded: " + ", ".join(created)
-                                   + ("; refreshed bundles: " + ", ".join(refreshed) if refreshed else "")))
+                            reason=_seed_reason(created, refreshed=refreshed)))
     db.session.commit()
     parts = []
     if created:
@@ -245,7 +262,7 @@ def seed_rooms():
         created.append(name)
     db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
                             action="seed.rooms", table_name="room", record_id=None,
-                            reason="seeded: " + ", ".join(created)))
+                            reason=_seed_reason(created)))
     db.session.commit()
     total = sum(r.capacity for r in Room.query.all())
     return "Seeded rooms: " + ", ".join(created) + " (%d total, %d beds)" % (Room.query.count(), total)
@@ -267,7 +284,7 @@ def seed_settings():
         created.append(key)
     db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
                             action="seed.settings", table_name="setting", record_id=None,
-                            reason="seeded: " + ", ".join(created)))
+                            reason=_seed_reason(created)))
     db.session.commit()
     return "Seeded settings: " + ", ".join(created) + " (%d total)" % Setting.query.count()
 
@@ -338,9 +355,7 @@ def seed_hrar():
             refreshed.append(code)
         db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
                                 action="seed.hrar", table_name="violation_rule", record_id=None,
-                                reason="seeded: " + ", ".join(created)
-                                       + ("; refreshed: " + ", ".join(refreshed) if refreshed else "")
-                                       + ("; deleted: " + str(deleted) if deleted else "")))
+                                reason=_seed_reason(created, refreshed=refreshed, deleted=deleted)))
         db.session.commit()
         parts = []
         if created:
