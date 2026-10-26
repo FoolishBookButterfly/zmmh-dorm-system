@@ -1,7 +1,7 @@
 # ZmMH Dormitory Management System - Developer Guide & API Reference
 
-> **Status:** Phase 1 Complete (Auth, Roles, Rooms, Settings, Audit)  
-> **Next Phase:** Phase 2 (Violations, HRAR Catalog)  
+> **Status:** Phase 2 Complete (Auth, Roles, Rooms, Settings, Audit, HRAR Catalog, Violations Lifecycle)  
+> **Next Phase:** Phase 3 (Money - Charges, Payments, Receipts)  
 > **Framework:** Flask 3.x with factory pattern + blueprints  
 > **Database:** SQLite (dev) / PostgreSQL (Render prod)  
 > **ORM:** Flask-SQLAlchemy 3.x + Flask-Migrate  
@@ -57,10 +57,17 @@ zmmh/
 │   │   ├── default_rooms.py    # Room catalog (20 rooms)
 │   │   └── default_settings.py # Settings catalog (20 settings)
 │   │
+│   ├── violations/
+│   │   ├── __init__.py         # Blueprint registration
+│   │   ├── models.py           # ViolationRule, RuleVersion, ViolationRecord, Dispute, EscalationFlag
+│   │   ├── forms.py            # RuleForm, LogViolationForm, DisputeForm, DecideDisputeForm
+│   │   └── routes.py           # Rules admin, log, review, mine, disputes, auto-confirm job
+│   │
 │   └── utils/
 │       ├── __init__.py
 │       ├── decorators.py       # permission_required decorator
 │       ├── email.py            # Email sending utilities
+│       ├── photos.py           # Pillow photo upload helper (<=1280px)
 │       └── settings.py         # Settings read/write helpers
 │
 ├── app/templates/
@@ -86,6 +93,8 @@ zmmh/
 │   ├── versions/
 │   │   ├── 1832d92c183b_phase1_models.py
 │   │   └── b82d393e0f2c_phase1_4_residency_joined_at_left_at.py
+│   │   └── c05781ef0981_phase2_1_violations_hrar.py
+
 │   └── env.py
 │
 ├── instance/                   # Instance folder (SQLite DB, runtime files)
@@ -226,6 +235,102 @@ zmmh/
 | reason | String(255) | Nullable | Reason for change |
 | created_at | DateTime | Default now() | When change occurred |
 
+## Phase 2 Tables (HRAR + Violations)
+
+### ViolationRule (HRAR catalog rule)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK | Primary key |
+| code | String(10) | Unique, Not Null | Rule code (e.g. 2.B) |
+| section | Integer | Not Null | HRAR section number |
+| section_title | String(120) | Nullable | Section title |
+| title | String(200) | Not Null | Rule title |
+| description | Text | Nullable | Rule text |
+| severity | String(30) | Nullable | Severity label |
+| points | Integer | Nullable | Points if confirmed |
+| fine_type | String(40) | Nullable | none/fixed/per_day/per_month/per_incident |
+| fine_amount | Integer | Nullable | Fine amount (PHP) |
+| fine_meta | JSON | Nullable | Extra fine metadata |
+| escalation | JSON | Nullable | Escalation ladder JSON |
+| who_can_log | JSON | Nullable | Roles allowed to log |
+| is_confidential | Boolean | Nullable | Confidential rule flag |
+| confirmation | String(20) | Nullable | auto_48h / adviser |
+| applies_when | String(20) | Nullable | always / closed_week |
+| version | Integer | Nullable | Current version |
+| is_active | Boolean | Nullable | Active rule |
+| review_note | String(10) | Nullable | Review note |
+| requires_victim_complaint | Boolean | Nullable | Requires victim complaint |
+| penalty_options | JSON | Nullable | Penalty options |
+| other_penalty | JSON | Nullable | Other penalty metadata |
+| auto_source | String(30) | Nullable | Auto source label |
+| note | Text | Nullable | Notes |
+
+### RuleVersion (immutable snapshot on edit)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK | Primary key |
+| rule_id | Integer | FK -> ViolationRule.id | Rule |
+| snapshot | JSON | Not Null | Full rule snapshot |
+| changed_by | Integer | Nullable | Actor |
+| changed_at | DateTime | Nullable | Changed timestamp |
+| reason | String(255) | Nullable | Reason |
+
+### ViolationRecord (one logged offense)
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK | Primary key |
+| rule_id | Integer | FK -> ViolationRule.id | Rule |
+| residency_id | Integer | FK -> Residency.id | Accused occupant |
+| semester_id | Integer | FK -> Semester.id | Semester |
+| reporter_id | Integer | Nullable | Reporter (NULL if anonymous) |
+| is_anonymous | Boolean | Nullable | Anonymous flag |
+| date | Date | Not Null | Incident date |
+| time | Time | Nullable | Incident time |
+| place | String(120) | Nullable | Place |
+| notes | Text | Nullable | Notes |
+| photo_path | String(255) | Nullable | Uploaded photo path |
+| offense_count | Integer | Nullable | Nth offense this rule/semester |
+| status | String(20) | Nullable | Logged/Confirmed/Dismissed/Under Review |
+| confirmed_by | Integer | Nullable | Confirmer |
+| confirmed_at | DateTime | Nullable | Confirmed timestamp |
+| auto_confirm_at | DateTime | Nullable | Auto-confirm time (minor) |
+| fine_amount | Integer | Nullable | Fine amount |
+| fine_charge_id | Integer | Nullable | Phase 3 Charge link (stub now) |
+| chosen_penalty | JSON | Nullable | Chosen penalty |
+| notified_at | DateTime | Nullable | Notice timestamp |
+| created_at | DateTime | Nullable | Created timestamp |
+
+### Dispute
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK | Primary key |
+| violation_id | Integer | FK -> ViolationRecord.id | Violation |
+| filed_by | Integer | Not Null | Filer (occupant) |
+| reason | Text | Not Null | Dispute reason |
+| filed_at | DateTime | Nullable | Filed timestamp |
+| reviewed_by | Integer | Nullable | Reviewer |
+| decision | String(20) | Nullable | upheld/dismissed |
+| decision_reason | Text | Nullable | Decision reason |
+| decided_at | DateTime | Nullable | Decision timestamp |
+
+### EscalationFlag
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | Integer | PK | Primary key |
+| residency_id | Integer | FK -> Residency.id | Occupant |
+| type | String(30) | Not Null | probation/expulsion_flag |
+| reason | String(255) | Not Null | Reason |
+| violation_id | Integer | FK -> ViolationRecord.id | Triggering violation |
+| resolved | Boolean | Nullable | Resolved flag |
+| created_at | DateTime | Nullable | Created timestamp |
+
+---
+
 
 ---
 
@@ -263,6 +368,25 @@ zmmh/
 | `/admin/school-year` | GET, POST | `schoolyear.manage` | Create year/semester; activate year/semester |
 | `/admin/school-year/<id>/activate` | POST | `schoolyear.manage` | Activate a specific year |
 | `/admin/semester/<id>/activate` | POST | `schoolyear.manage` | Activate one semester within a year |
+## Violations (`app/violations/routes.py`)
+
+| URL | Methods | Auth Required | Description |
+|-----|---------|---------------|-------------|
+| `/violations/rules` | GET | `violations.view` | HRAR rules catalog list |
+| `/violations/rules/add` | GET, POST | `violations.confirm` | Add rule (creates RuleVersion) |
+| `/violations/rules/<id>/edit` | GET, POST | `violations.confirm` | Edit rule (creates RuleVersion, bumps version) |
+| `/violations/rules/<id>/history` | GET | `violations.view` | Rule version history |
+| `/violations/log` | GET, POST | `violations.log` | Log violation (multi-occupant, photo upload) |
+| `/violations/review` | GET, POST | `violations.confirm` | Adviser review queue (confirm/dismiss) |
+| `/violations/mine` | GET | login | Occupant's own violations |
+| `/violations/dispute/<id>` | GET, POST | login | File dispute (within dispute window) |
+| `/violations/disputes` | GET | `violations.confirm` | Dispute queue |
+| `/violations/disputes/decide/<id>` | GET, POST | `violations.confirm` | Decide dispute (President + advisers) |
+| `/jobs/auto-confirm` | GET | `violations.confirm` | Run minor 48h auto-confirm job |
+| `/seed-hrar` | GET | `violations.confirm` | Seed HRAR catalog (404 once complete) |
+
+---
+
 
 ---
 
@@ -275,6 +399,7 @@ zmmh/
 |-----------|-----------|----------------|
 | `auth` | (root) | Login, logout, register, forgot/reset password, bootstrap, seed routes |
 | `roster` | (root) | Rooms, roles, settings, audit, school years, import/export |
+| `violations` | (root) | HRAR rules, violation log/review/mine/disputes, auto-confirm job |
 
 Both blueprints register on the root URL prefix (`/`), so routes like `/login`, `/admin/roles`, `/roster/rooms` are at the root level. Blueprints are registered in the factory (`app/__init__.py`).
 
@@ -639,6 +764,129 @@ Live-server equivalents (no shell needed): `/seed-roles`, `/seed-rooms`, `/seed-
 
 ---
 
+## Local Development & Testing (Phase 2)
+
+### Prerequisites
+
+- Python 3.11+ with venv.
+- Install dependencies: `pip install -r requirements.txt`
+- Copy `.env.example` to `.env` (if present) and set `SECRET_KEY`, `SECURITY_PASSWORD_SALT`, mail settings.
+
+### First run (fresh database)
+
+1. Create DB: `flask db upgrade` (or `python -m flask db upgrade`)
+2. Seed roles: visit `/seed-roles` (or run `python seed_roles.py`)
+3. Seed rooms: visit `/seed-rooms` (or `python seed_rooms.py`)
+4. Seed settings: visit `/seed-settings` (or `python seed_settings.py`)
+5. Seed HRAR catalog: visit `/seed-hrar` (or `python seed_hrar.py`)
+6. Bootstrap first account: visit `/bootstrap` and create the super-admin (one-time; 404 afterwards).
+
+### Superadmin test account (always-on for local testing)
+
+- **Username:** `superadmin`
+- **Password:** `testpass`
+- **Role:** `Super-admin` (global bypass)
+- **Status:** active, no forced password change.
+- This account is the local dev super-admin (User id 1). If the DB is recreated, re-run `/bootstrap` or `prep_superadmin.py` to restore it.
+- Helper scripts in `zmmh/`:
+  - `prep_superadmin.py` — resets User 1 password to `testpass` and activates it.
+  - `reset_pw.py` — resets User 2 password to `testpass`.
+- Do **not** commit real passwords or use these in production.
+
+### Running the app
+
+- Dev server: `python run.py` (or `flask run`)
+- App URL: `http://127.0.0.1:5000/`
+- Login: `/login`
+
+### Key URLs (Phase 1 + Phase 2)
+
+- Auth: `/login`, `/logout`, `/change-password`, `/create-account`, `/forgot`, `/reset/<token>`, `/bootstrap`
+- Seeders: `/seed-roles`, `/seed-rooms`, `/seed-settings`, `/seed-hrar`
+- Roster: `/admin/roles`, `/admin/roles/<id>`, `/roster/rooms`, `/roster/rooms/<id>`, `/roster/import`, `/roster/export`, `/roster/remove/<id>`, `/roster/restore/<id>`
+- Admin: `/admin/settings`, `/admin/audit`, `/admin/school-year`, `/admin/school-year/<id>/activate`, `/admin/semester/<id>/activate`
+- Violations: `/violations/rules`, `/violations/rules/add`, `/violations/rules/<id>/edit`, `/violations/rules/<id>/history`, `/violations/log`, `/violations/review`, `/violations/mine`, `/violations/dispute/<id>`, `/violations/disputes`, `/violations/disputes/decide/<id>`, `/jobs/auto-confirm`
+
+### Running tests
+
+- Violations E2E: `python -m pytest tests/test_violations_e2e.py -q` (expected: 6 passed)
+- Smoke scripts (manual, creates test data — clean up afterwards):
+  - `python create_test_rec.py`
+  - `python smoke_dispute.py`, `python smoke_dispute2.py`, `python smoke_decide.py`
+  - `python inspect_users.py`
+
+### Phase 2 verification checklist
+
+- [x] HRAR catalog seeded (57 rules, sections 1-8)
+- [x] Rule add/edit creates `RuleVersion` + bumps version + audit log
+- [x] Violation log computes `offense_count` and `auto_confirm_at`
+- [x] Photo upload shrinks to <=1280px JPEG
+- [x] Anonymous reporter stored as `reporter_id=NULL`
+- [x] Auto-confirm job confirms eligible minor violations after 48h
+- [x] Escalation flags created at configured thresholds
+- [x] Dispute moves record to `Under Review` and pauses points
+- [x] Dispute window enforced (`dispute_days` setting)
+- [x] Reviewer cannot be reporter or accused
+- [x] Confidential rules restricted to advisers/Justice head/President
+- [x] Kitchen head restricted to Section 5
+- [x] Phase 2 E2E tests green (6/6)
+
+### Git: commit and push (manual)
+
+Local commit already created for Phase 2. To push to GitHub:
+
+```bash
+cd "c:/Users/Lenovo T14/Documents/Dormitory/ZmMH Dormitory Management System"
+git status
+git add -A
+git commit -m "Phase 2 complete: HRAR catalog + violations lifecycle"
+git push origin main
+```
+
+If `git push` fails with "Repository not found" or an auth prompt:
+
+1. Complete the browser login opened by Git Credential Manager.
+2. Re-run `git push origin main`.
+3. If still failing, check remote: `git remote -v` (expected `https://github.com/FoolishBookButterfly/ZmMH-Dormitory-Management-System.git`).
+4. Ensure the GitHub account has push access to the repo.
+5. Never commit `.env`, `*.db`, `instance/`, or `app/static/uploads/*` (gitignored).
+
+### Phase 3: Money - Charges, Payments, Receipts (next)
+
+Goal: replace `_charge_stub()` with real `Charge` creation and build finance flows.
+
+Planned work:
+
+1. Models (new migration): `ChargeType`, `Charge`, `Payment`, `PaymentAllocation`, `Receipt`, `Expense`, `Budget`, `FeeWaiver`.
+   - `Charge`: residency_id, amount, source_violation_id (nullable), semester_id, is_waived.
+   - `Payment`: residency_id, amount, received_by.
+   - `PaymentAllocation`: payment_id, charge_id, amount (FIFO oldest-first).
+   - `Receipt`: payment_id, receipt_no (e.g. 2026-0001).
+2. Auto-create maintenance `Charge` (PHP 700/semester) per active residency when a semester is activated.
+3. Violation confirm auto-creates a fine `Charge` (replace `_charge_stub()` in `app/violations/routes.py`).
+4. Treasurer routes (permission `finance.edit`):
+   - Record payment: select occupant, amount, allocate oldest-first, generate receipt number, audit.
+   - Partial payments allowed.
+   - Balance = sum(charges) - sum(allocations).
+5. Receipt printable page + reports: balance, collection %, unpaid list, monthly income/expense, CSV/PDF export.
+6. SA expenses unverified until Treasurer checks (`Expense.is_verified`).
+7. Waivers adviser-only with reason (`FeeWaiver.approved_by`, `reason`).
+8. Tests: 700+50 charges, pay 500, verify 250 balance, print receipt, export CSV.
+
+Suggested build order:
+
+- 3.1 Add models + migration + seed charge types.
+- 3.2 Implement `charge.create_from_violation()` and call from violation confirm.
+- 3.3 Implement maintenance charge auto-creation on semester activation.
+- 3.4 Record payment route + FIFO allocation + receipt numbering.
+- 3.5 Receipt view + reports + CSV export.
+- 3.6 Expenses + verification + waivers.
+- 3.7 E2E tests.
+
+Do not start Phase 3 until Phase 2 commit is pushed (or at least committed locally).
+
+---
+
 ## Important Rules for Contributors
 
 - **Never delete production data** — use Flask-Migrate for schema changes
@@ -651,5 +899,5 @@ Live-server equivalents (no shell needed): `/seed-roles`, `/seed-rooms`, `/seed-
 
 ---
 
-*Generated for ZmMH Dormitory Management System — Phase 1 complete, Phase 2 next. Roadmap: `ROADMAP-Flask-Build-Guide.md` · Spec: `ZmMH Dormitory Management System Requirements (Draft 1).md`*
+*Generated for ZmMH Dormitory Management System — Phase 2 complete. Roadmap: `ROADMAP-Flask-Build-Guide.md` · Spec: `ZmMH Dormitory Management System Requirements (Draft 1).md`*
 

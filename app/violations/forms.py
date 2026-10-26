@@ -3,7 +3,7 @@
 from datetime import date as _date  # default violation date = today
 from flask_wtf import FlaskForm  # base: CSRF token via form.hidden_tag()
 from flask_wtf.file import FileField, FileAllowed  # photo upload (optional)
-from wtforms import StringField, TextAreaField, IntegerField, SelectField, BooleanField, SubmitField, DateField, TimeField
+from wtforms import StringField, TextAreaField, IntegerField, SelectField, BooleanField, SubmitField, DateField, TimeField, HiddenField
 from wtforms.validators import DataRequired, Length, NumberRange, Optional, AnyOf
 from wtforms.widgets import ListWidget, CheckboxInput  # occupant multi-select as tick-boxes
 from wtforms import SelectMultipleField
@@ -115,3 +115,27 @@ class LogViolationForm(FlaskForm):
         super().__init__(*args, **kwargs)
         if not self.date.data:
             self.date.data = _date.today()
+
+
+class DisputeForm(FlaskForm):
+    """Phase 2.5: occupant challenges a Logged/Confirmed violation (reason required)."""
+    reason = TextAreaField("Why are you disputing this? (required, audited)",
+                           validators=[DataRequired(), Length(max=2000)])
+    file_dispute = SubmitField("File dispute")
+
+
+
+
+class ReviewActionForm(FlaskForm):
+    """Phase 2.4: adviser Confirm / Dismiss a Logged violation (reason required)."""
+    record_id = HiddenField(validators=[DataRequired()])
+    reason = TextAreaField("Reason (required, audited)", validators=[DataRequired(), Length(max=500)])
+    confirm = SubmitField("Confirm")
+    dismiss = SubmitField("Dismiss")
+class DisputeDecisionForm(FlaskForm):
+    """Phase 2.5: President + advisers decide a disputed violation (reason required)."""
+    record_id = HiddenField(validators=[DataRequired()])
+    reason = TextAreaField("Decision reason (required, audited)",
+                           validators=[DataRequired(), Length(max=500)])
+    confirm = SubmitField("Uphold (Confirmed)")
+    dismiss = SubmitField("Dismiss")

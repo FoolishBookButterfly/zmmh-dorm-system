@@ -79,8 +79,9 @@ def create_app():
     app.register_blueprint(roster_bp)
 
     # Phase 2.2: violations blueprint -> /violations/rules (guarded inside)
-    from app.violations.routes import violations_bp  # noqa: E402
+    from app.violations.routes import violations_bp, jobs_bp  # noqa: E402
     app.register_blueprint(violations_bp)
+    app.register_blueprint(jobs_bp)  # /jobs/auto-confirm (cron)
 
     # Import models so Flask-Migrate sees the tables (no-op at runtime, needed for autogenerate)
     # Phase 1.1: roster models; Phase 2.1: violations models (later: finance/... here too)
@@ -114,5 +115,19 @@ def create_app():
         def can(permission):
             return has_permission(current_user, permission)
         return {"can": can}
+
+    @app.context_processor
+    def _inject_can_decide_dispute():
+        """Jinja helper: may current user decide disputes (advisers + President)."""
+        def can_decide_dispute():
+            try:
+                from app.utils.decorators import has_permission
+                if has_permission(current_user, "violations.confirm"):
+                    return True
+                from app.violations.routes import _my_role_names
+                return "President" in _my_role_names()
+            except Exception:
+                return False
+        return {"can_decide_dispute": can_decide_dispute}
 
     return app  # factory RETURNS the app -- run.py assigns it to `app`

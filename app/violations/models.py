@@ -92,6 +92,7 @@ class ViolationRecord(db.Model):
     created_at = db.Column(db.DateTime, default=_utcnow)
 
     rule = db.relationship("ViolationRule", backref="records")
+    residency = db.relationship("Residency")  # occupant's year-record (person/room live here)
 
 
 class Dispute(db.Model):
@@ -119,7 +120,7 @@ class EscalationFlag(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     residency_id = db.Column(db.Integer, db.ForeignKey("residency.id"), nullable=False)
-    type = db.Column(db.String(30), nullable=False)  # probation | flag_expulsion
+    type = db.Column(db.String(30), nullable=False)  # probation | expulsion_flag
     reason = db.Column(db.String(255), nullable=False)  # e.g. "2.A offense #3"
     violation_id = db.Column(db.Integer, db.ForeignKey("violation_record.id"), nullable=True)
     resolved = db.Column(db.Boolean, default=False)  # True once adviser acts

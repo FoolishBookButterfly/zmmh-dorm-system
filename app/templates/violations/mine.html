@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-3">
+  <h1 class="h4 mb-3">My Violations</h1>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="alert alert-{{ cat }} py-2">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
+  {% if not records %}
+  <p class="text-muted">No violations recorded against you.</p>
+  {% else %}
+  <div class="list-group">
+    {% for rec in records %}
+    <div class="list-group-item">
+      <div class="d-flex justify-content-between">
+        <div>
+          <strong>{{ rec.rule.code }}</strong> — {{ rec.rule.title }}
+          <span class="badge bg-secondary ms-2">{{ rec.status }}</span>
+          {% if rec.rule.is_confidential %}<span class="badge bg-dark ms-1">confidential</span>{% endif %}
+          <div class="small text-muted">Offense #{{ rec.offense_count }} · {{ rec.date }} · {{ rec.place or '' }}</div>
+          {% if rec.notes %}<div class="small">{{ rec.notes }}</div>{% endif %}
+          {% if rec.fine_amount %}<div class="small">Fine: PHP {{ rec.fine_amount }}</div>{% endif %}
+        </div>
+        <div>
+          {% if rec.status in ("Logged","Confirmed") %}
+          {% set base = rec.notified_at or rec.created_at %}
+          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('violations.dispute_file', record_id=rec.id) }}">Dispute</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -46,6 +46,15 @@
           {% if can("violations.view") %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('violations.rules') }}">HRAR</a></li>
           {% endif %}
+          {% if can("violations.view") %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('violations.my_violations') }}">My violations</a></li>
+          {% endif %}
+          {% if can("violations.confirm") %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('violations.review_queue') }}">Review queue</a></li>
+          {% endif %}
+          {% if can_decide_dispute() %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('violations.dispute_queue') }}">Disputes</a></li>
+          {% endif %}
           {% if can("violations.log") %}
           <li class="nav-item"><a class="nav-link" href="{{ url_for('violations.log_violation') }}">Log violation</a></li>
           {% endif %}

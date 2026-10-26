@@ -1,26 +1,31 @@
 # app/violations/routes.py -- Phase 2.2 rules admin + Phase 2.3 log form.
 # CS50x map: CS50x did SELECT/UPDATE by hand; here ORM + RuleVersion snapshots + AuditLog.
 import json  # readable old/new snapshots inside AuditLog + RuleVersion
+import os  # JOB_TOKEN env for the auto-confirm cron route
 from datetime import timedelta  # auto_confirm_at = now + auto_confirm_hours
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
 from flask_login import current_user, login_required
 
 from app import db  # commit rows
-from app.violations.models import ViolationRule, RuleVersion, ViolationRecord, _utcnow  # 2.1 models + log model
+from app.violations.models import ViolationRule, RuleVersion, ViolationRecord, EscalationFlag, Dispute, _utcnow  # 2.1 models + log model
 from app.roster.models import AuditLog, SchoolYear, Residency, RoleAssignment, Person, Semester, Role  # audit + people
-from app.violations.forms import RuleForm, LogViolationForm, LOGGER_CHOICES, ESCALATION_ACTIONS
+from app.violations.forms import RuleForm, LogViolationForm, ReviewActionForm, DisputeForm, DisputeDecisionForm, LOGGER_CHOICES, ESCALATION_ACTIONS
 from app.roster.default_hrar import SECTION_TITLES  # section titles for new rules
 from app.utils.decorators import permission_required, has_permission  # central gate
-from app.utils.settings import get_int_setting  # auto_confirm_hours + dispute_days, NEVER hardcode
+from app.utils.settings import get_setting, get_int_setting  # auto_confirm_hours + dispute_days + job_token, NEVER hardcode
 from app.utils.photos import save_violation_photo  # Pillow <=1280px
 from app.utils.email import send_violation_notice  # occupant notification (dev console print)
 
 violations_bp = Blueprint("violations", __name__, url_prefix="/violations")
+jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")  # top-level cron path /jobs/auto-confirm
 
 
-def _audit(action, table_name, record_id, old=None, new=None, reason=None):
+def _audit(action, table_name, record_id, old=None, new=None, reason=None, actor_id=None):
     """Append-only audit row (scores/money changes REQUIRE reason)."""
-    db.session.add(AuditLog(actor_id=current_user.id, action=action, table_name=table_name,
+    if actor_id is None:
+        from flask_login import current_user as _cu  # local: avoid import cycle at module load
+        actor_id = getattr(_cu, "id", None)
+    db.session.add(AuditLog(actor_id=actor_id, action=action, table_name=table_name,
                             record_id=record_id, old_value=old, new_value=new, reason=reason))
 
 
@@ -401,3 +406,326 @@ def log_violation():
         return redirect(url_for("violations.rules"))
     return render_template("violations/log.html", form=form,
                            auto_hours=get_int_setting("auto_confirm_hours", 48))
+# ---------------------------------------------------------------------------
+# Phase 2.4 -- review queue + auto-confirm job
+# ---------------------------------------------------------------------------
+
+def _charge_stub(rec):
+    """Phase 3 hand-off: a confirmed fine becomes a Charge (real model in Phase 3).
+
+    For now we record the intent in the audit trail and leave fine_charge_id=None
+    so Phase 3 can backfill charges from these stub rows. Never crash the
+    confirm flow on a finance stub.
+    """
+    if not rec.fine_amount:
+        return None
+    try:
+        _audit("violation.charge_stub", "violation_record", rec.id,
+               new=json.dumps({"fine_amount": rec.fine_amount,
+                               "status": "pending_charge (Phase 3)"}),
+               reason="fine snapshot at log time; Charge creation deferred to Phase 3")
+    except Exception:
+        pass
+    return None
+
+
+def _maybe_escalate(rec):
+    """Create EscalationFlag rows for probation/flag_expulsion at this offense level.
+
+    Spec: escalation NEVER punishes automatically -- it only flags. Adviser decides.
+    Other actions (warning, verbal_warning, confiscation, ...) are recorded in the
+    audit row but create no rows of their own.
+    """
+    ladder = rec.rule.escalation or []
+    entry = next((e for e in ladder if e.get("offense") == rec.offense_count), None)
+    if not entry:
+        return []
+    flags = []
+    for action in (entry.get("actions") or []):
+        if action in ("probation", "flag_expulsion"):
+            ftype = "probation" if action == "probation" else "expulsion_flag"
+            db.session.add(EscalationFlag(
+                residency_id=rec.residency_id, type=ftype,
+                reason="%s offense #%d -> %s" % (rec.rule.code, rec.offense_count, action),
+                violation_id=rec.id))
+            flags.append(ftype)
+    _audit("violation.escalate", "violation_record", rec.id,
+           new=json.dumps({"offense": rec.offense_count,
+                           "actions": entry.get("actions"),
+                           "flags_created": len(flags)}),
+           reason="; ".join(entry.get("actions") or []))
+    return flags
+
+
+def _run_auto_confirm():
+    """Confirm every Logged record whose auto_confirm_at has passed. Returns (count, ids)."""
+    now = _utcnow()
+    due = ViolationRecord.query.filter(
+        ViolationRecord.status == "Logged",
+        ViolationRecord.auto_confirm_at.isnot(None),
+        ViolationRecord.auto_confirm_at <= now).all()
+    ids = []
+    for rec in due:
+        rec.status = "Confirmed"
+        rec.confirmed_by = None  # system auto-confirm
+        rec.confirmed_at = now
+        _audit("violation.auto_confirm", "violation_record", rec.id,
+               old=json.dumps({"status": "Logged"}),
+               new=json.dumps({"status": "Confirmed", "auto": True}),
+               reason="auto-confirmed after %s" % rec.auto_confirm_at,
+               actor_id=None)
+        _maybe_escalate(rec)
+        _charge_stub(rec)
+        ids.append(rec.id)
+    if ids:
+        db.session.commit()
+    return len(ids), ids
+
+
+@violations_bp.route("/review", methods=["GET"])
+@login_required
+@permission_required("violations.confirm")
+def review_queue():
+    """Adviser review queue: Logged records pending Confirm/Dismiss."""
+    sem = Semester.query.filter_by(is_active=True).first()
+    q = ViolationRecord.query.filter_by(status="Logged")
+    if sem is not None:
+        q = q.filter_by(semester_id=sem.id)
+    records = q.order_by(ViolationRecord.created_at.desc()).all()
+    if not _may_see_confidential():
+        records = [r for r in records if not r.rule.is_confidential]
+    form = ReviewActionForm()
+    return render_template("violations/review.html", records=records, form=form)
+
+
+@violations_bp.route("/review", methods=["POST"])
+@login_required
+@permission_required("violations.confirm")
+def review_decide():
+    """Confirm or Dismiss one Logged record (reason required, audited)."""
+    form = ReviewActionForm()
+    if not form.validate_on_submit():
+        flash("Reason is required.", "danger")
+        return redirect(url_for("violations.review_queue"))
+    try:
+        rid = int(form.record_id.data)
+    except (TypeError, ValueError):
+        flash("Bad record id.", "danger")
+        return redirect(url_for("violations.review_queue"))
+    rec = db.session.get(ViolationRecord, rid)
+    if rec is None or rec.status != "Logged":
+        flash("Record not found or already decided.", "danger")
+        return redirect(url_for("violations.review_queue"))
+    if rec.rule.is_confidential and not _may_see_confidential():
+        abort(403)
+    reason = (form.reason.data or "").strip()
+    now = _utcnow()
+    if form.confirm.data:
+        chosen = (request.form.get("chosen_penalty") or "").strip() or None
+        if chosen and rec.rule.penalty_options:
+            rec.chosen_penalty = chosen
+        rec.status = "Confirmed"
+        rec.confirmed_by = current_user.id
+        rec.confirmed_at = now
+        _audit("violation.confirm", "violation_record", rec.id,
+               old=json.dumps({"status": "Logged"}),
+               new=json.dumps({"status": "Confirmed", "offense_count": rec.offense_count}),
+               reason=reason)
+        _maybe_escalate(rec)
+        _charge_stub(rec)
+        db.session.commit()
+        flash("Confirmed %s (offense #%d)." % (rec.rule.code, rec.offense_count), "success")
+    elif form.dismiss.data:
+        rec.status = "Dismissed"
+        rec.confirmed_by = current_user.id
+        rec.confirmed_at = now
+        _audit("violation.dismiss", "violation_record", rec.id,
+               old=json.dumps({"status": "Logged"}),
+               new=json.dumps({"status": "Dismissed"}),
+               reason=reason)
+        db.session.commit()
+        flash("Dismissed %s." % rec.rule.code, "success")
+    else:
+        flash("Choose Confirm or Dismiss.", "danger")
+    return redirect(url_for("violations.review_queue"))
+
+def _can_decide_dispute():
+    if not getattr(current_user, "is_authenticated", False):
+        return False
+    if has_permission(current_user, "violations.confirm"):
+        return True
+    return "President" in _my_role_names()
+
+
+def _accused_user_id(rec):
+    res = getattr(rec, "residency", None)
+    if res is None:
+        return None
+    from app.roster.models import User
+    u = User.query.filter_by(person_id=res.person_id).first()
+    return u.id if u else None
+
+
+def _dispute_window_ok(rec):
+    base = rec.notified_at or rec.created_at
+    if base is None:
+        return True
+    days = get_int_setting("dispute_days", 3)
+    return (_utcnow() - base).days <= days
+
+
+@violations_bp.route("/mine", methods=["GET"])
+@login_required
+def my_violations():
+    year = SchoolYear.query.filter_by(is_active=True).first()
+    if year is None or current_user.person_id is None:
+        return render_template("violations/mine.html", records=[])
+    res_ids = [r.id for r in Residency.query.filter_by(
+        person_id=current_user.person_id, school_year_id=year.id).all()]
+    if not res_ids:
+        return render_template("violations/mine.html", records=[])
+    recs = (ViolationRecord.query
+            .filter(ViolationRecord.residency_id.in_(res_ids))
+            .order_by(ViolationRecord.created_at.desc()).all())
+    form = DisputeForm()
+    return render_template("violations/mine.html", records=recs, form=form)
+
+
+@violations_bp.route("/dispute/<int:record_id>", methods=["GET", "POST"])
+@login_required
+def dispute_file(record_id):
+    rec = db.session.get(ViolationRecord, record_id)
+    if rec is None:
+        abort(404)
+    if _accused_user_id(rec) != getattr(current_user, "id", None):
+        abort(403)
+    if rec.status not in ("Logged", "Confirmed"):
+        flash("This violation can no longer be disputed.", "warning")
+        return redirect(url_for("violations.my_violations"))
+    if Dispute.query.filter_by(violation_id=rec.id).first() is not None:
+        flash("Already disputed.", "warning")
+        return redirect(url_for("violations.my_violations"))
+    if not _dispute_window_ok(rec):
+        flash("Dispute window has closed.", "danger")
+        return redirect(url_for("violations.my_violations"))
+    form = DisputeForm()
+    if form.validate_on_submit():
+        d = Dispute(violation_id=rec.id, filed_by=current_user.id,
+                    reason=form.reason.data.strip())
+        db.session.add(d)
+        rec.status = "Under Review"
+        rec.auto_confirm_at = None
+        _audit("violation.dispute_file", "violation_record", rec.id,
+               old=json.dumps({"status": "Logged/Confirmed"}),
+               new=json.dumps({"status": "Under Review"}),
+               reason=form.reason.data.strip())
+        db.session.commit()
+        flash("Dispute filed. Points and fine are paused while under review.", "success")
+        return redirect(url_for("violations.my_violations"))
+    return render_template("violations/dispute.html", rec=rec, form=form)
+
+
+@violations_bp.route("/disputes", methods=["GET"])
+@login_required
+def dispute_queue():
+    if not _can_decide_dispute():
+        abort(403)
+    year = SchoolYear.query.filter_by(is_active=True).first()
+    q = ViolationRecord.query.filter_by(status="Under Review")
+    if year is not None:
+        sem_ids = [s.id for s in Semester.query.filter_by(school_year_id=year.id).all()]
+        q = q.filter(ViolationRecord.semester_id.in_(sem_ids))
+    records = q.order_by(ViolationRecord.created_at.desc()).all()
+    if not _may_see_confidential():
+        records = [r for r in records if not r.rule.is_confidential]
+    form = DisputeDecisionForm()
+    return render_template("violations/disputes.html", records=records, form=form)
+
+
+@violations_bp.route("/disputes/decide", methods=["POST"])
+@login_required
+def dispute_decide():
+    if not _can_decide_dispute():
+        abort(403)
+    form = DisputeDecisionForm()
+    if not form.validate_on_submit():
+        flash("Reason is required.", "danger")
+        return redirect(url_for("violations.dispute_queue"))
+    try:
+        rid = int(form.record_id.data)
+    except (TypeError, ValueError):
+        flash("Bad record id.", "danger")
+        return redirect(url_for("violations.dispute_queue"))
+    rec = db.session.get(ViolationRecord, rid)
+    if rec is None or rec.status != "Under Review":
+        flash("Record not found or not under review.", "danger")
+        return redirect(url_for("violations.dispute_queue"))
+    if rec.rule.is_confidential and not _may_see_confidential():
+        abort(403)
+    if rec.reporter_id is not None and rec.reporter_id == current_user.id:
+        flash("You cannot decide a dispute you reported.", "danger")
+        return redirect(url_for("violations.dispute_queue"))
+    if _accused_user_id(rec) == current_user.id:
+        flash("You cannot decide a dispute filed against you.", "danger")
+        return redirect(url_for("violations.dispute_queue"))
+    d = Dispute.query.filter_by(violation_id=rec.id).order_by(Dispute.filed_at.desc()).first()
+    reason = form.reason.data.strip()
+    now = _utcnow()
+    if form.confirm.data:
+        was_confirmed_before = rec.confirmed_at is not None
+        rec.status = "Confirmed"
+        if rec.confirmed_at is None:
+            rec.confirmed_at = now
+        rec.confirmed_by = current_user.id
+        if d is not None:
+            d.reviewed_by = current_user.id
+            d.decision = "Confirmed"
+            d.decision_reason = reason
+            d.decided_at = now
+        _audit("violation.dispute_uphold", "violation_record", rec.id,
+               old=json.dumps({"status": "Under Review"}),
+               new=json.dumps({"status": "Confirmed"}), reason=reason)
+        if not was_confirmed_before:
+            _maybe_escalate(rec)
+            _charge_stub(rec)
+        db.session.commit()
+        flash("Upheld %s." % rec.rule.code, "success")
+    elif form.dismiss.data:
+        rec.status = "Dismissed"
+        rec.confirmed_by = current_user.id
+        rec.confirmed_at = now
+        if d is not None:
+            d.reviewed_by = current_user.id
+            d.decision = "Dismissed"
+            d.decision_reason = reason
+            d.decided_at = now
+        _audit("violation.dispute_dismiss", "violation_record", rec.id,
+               old=json.dumps({"status": "Under Review"}),
+               new=json.dumps({"status": "Dismissed"}), reason=reason)
+        db.session.commit()
+        flash("Dismissed %s." % rec.rule.code, "success")
+    else:
+        flash("Choose Uphold or Dismiss.", "danger")
+    return redirect(url_for("violations.dispute_queue"))
+
+
+def _auto_confirm_view():
+    token = request.args.get("token") or request.form.get("token")
+    cfg_token = os.getenv("JOB_TOKEN") or get_setting("job_token", "")
+    if token and cfg_token and token == cfg_token:
+        n, ids = _run_auto_confirm()
+        return {"confirmed": n, "ids": ids}, 200
+    if not getattr(current_user, "is_authenticated", False):
+        return redirect(url_for("auth.login", next=request.path))
+    if not has_permission(current_user, "violations.confirm"):
+        abort(403)
+    n, ids = _run_auto_confirm()
+    flash("Auto-confirmed %d record(s)." % n, "success")
+    return redirect(url_for("violations.review_queue"))
+
+
+violations_bp.add_url_rule("/jobs/auto-confirm", endpoint="auto_confirm_job",
+                           view_func=_auto_confirm_view, methods=["GET", "POST"])
+jobs_bp.add_url_rule("/auto-confirm", endpoint="auto_confirm_job",
+                     view_func=_auto_confirm_view, methods=["GET", "POST"])
+
