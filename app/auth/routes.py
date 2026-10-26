@@ -281,14 +281,12 @@ def seed_hrar():
     Also ensures auto_confirm_hours=48 exists.
     Creates only deterministic ViolationRule ROWS the code already defines;
     logging/confirming still needs login + violations.* via the violations pages.
+
+    Pass ?force=all to DROP every violation_rule row first and re-seed from the
+    catalog. Useful when the on-disk catalog drifted from the DB on a host you
+    cannot reach with the shell (e.g. Render free tier).
     """
     from app.roster.default_hrar import RULES, SECTION_TITLES  # local import: one catalog
-    # Ensure the auto-confirm window setting exists too.
-    auto = Setting.query.filter_by(key="auto_confirm_hours").first()
-    if auto is None:
-        db.session.add(Setting(key="auto_confirm_hours", value="48",
-                               description="Auto-confirm window (hours) for minor violations"))
-    existing = {r.code: r for r in ViolationRule.query.all()}
 
     def _fields(code, meta):
         return dict(
@@ -310,28 +308,79 @@ def seed_hrar():
             auto_source=meta.get("auto_source"), note=meta.get("note"),
         )
 
-    missing = [c for c in RULES if c not in existing]
-    stale = [c for c in RULES if c in existing
-             and any(getattr(existing[c], k) != v for k, v in _fields(c, RULES[c]).items())]
-    if not missing and not stale and auto is not None:
-        abort(404)  # catalog complete and current -> permanently inert
-    created, refreshed = [], []
-    for code in missing:
-        db.session.add(ViolationRule(code=code, **_fields(code, RULES[code])))
-        created.append(code)
-    for code in stale:
-        for k, v in _fields(code, RULES[code]).items():
-            setattr(existing[code], k, v)
-        refreshed.append(code)
-    db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
-                            action="seed.hrar", table_name="violation_rule", record_id=None,
-                            reason="seeded: " + ", ".join(created)
-                                   + ("; refreshed: " + ", ".join(refreshed) if refreshed else "")))
-    db.session.commit()
-    parts = []
-    if created:
-        parts.append("Seeded rules: " + ", ".join(created))
-    if refreshed:
-        parts.append("Refreshed rules: " + ", ".join(refreshed))
-    return "; ".join(parts) + " (%d total)" % ViolationRule.query.count()
+    try:
+        # Ensure the auto-confirm window setting exists too.
+        auto = Setting.query.filter_by(key="auto_confirm_hours").first()
+        if auto is None:
+            db.session.add(Setting(key="auto_confirm_hours", value="48",
+                                   description="Auto-confirm window (hours) for minor violations"))
+
+        # ?force=all => wipe and reseed so a half-seeded DB self-heals from a browser.
+        if request.args.get("force") == "all":
+            deleted = ViolationRule.query.delete()
+            db.session.flush()
+        else:
+            deleted = 0
+
+        existing = {r.code: r for r in ViolationRule.query.all()}
+        missing = [c for c in RULES if c not in existing]
+        stale = [c for c in RULES if c in existing
+                 and any(getattr(existing[c], k) != v for k, v in _fields(c, RULES[c]).items())]
+        if not missing and not stale and auto is not None and deleted == 0:
+            abort(404)  # catalog complete and current -> permanently inert
+        created, refreshed = [], []
+        for code in missing:
+            db.session.add(ViolationRule(code=code, **_fields(code, RULES[code])))
+            created.append(code)
+        for code in stale:
+            for k, v in _fields(code, RULES[code]).items():
+                setattr(existing[code], k, v)
+            refreshed.append(code)
+        db.session.add(AuditLog(actor_id=current_user.id if current_user.is_authenticated else None,
+                                action="seed.hrar", table_name="violation_rule", record_id=None,
+                                reason="seeded: " + ", ".join(created)
+                                       + ("; refreshed: " + ", ".join(refreshed) if refreshed else "")
+                                       + ("; deleted: " + str(deleted) if deleted else "")))
+        db.session.commit()
+        parts = []
+        if created:
+            parts.append("Seeded rules: " + ", ".join(created))
+        if refreshed:
+            parts.append("Refreshed rules: " + ", ".join(refreshed))
+        if deleted:
+            parts.append("Replaced rules: %d" % deleted)
+        return "; ".join(parts) + " (%d total)" % ViolationRule.query.count()
+    except Exception as e:
+        db.session.rollback()  # never leave the session poisoned for the next request
+        # Return the *real* error as text so it can be read from a browser, not a raw 500.
+        # Most common: migration not yet applied on Render -> "no such table: violation_rule".
+        from flask import Response
+        body = ("ERROR seeding HRAR (db: %s): %s\n\n"
+                "If this mentions a missing table/column, the migration "
+                "c05781ef0981_phase2_1_violations_hrar may not have run on this DB. "
+                "Push to Render to trigger `flask db upgrade`, or hit /seed-hrar?force=all "
+                "after the table exists.") % (current_app.config.get("DB_KIND", "unknown"), e)
+        return Response(body, status=500, mimetype="text/plain")
+
+
+@auth_bp.route("/seed-hrar-status")
+def seed_hrar_status():
+    """Read-only catalog health check (browser-friendly, no shell needed)."""
+    try:
+        total = ViolationRule.query.count()
+        existing_codes = {r.code for r in
+                          ViolationRule.query.with_entities(ViolationRule.code).all()}
+        from app.roster.default_hrar import RULES
+        missing = [c for c in RULES if c not in existing_codes]
+        auto = Setting.query.filter_by(key="auto_confirm_hours").first()
+        return ("HRAR seed status\n"
+                "  rules_in_db: %d\n"
+                "  rules_missing: %d %s\n"
+                "  auto_confirm_hours: %s\n"
+                "  total_catalog: 57\n") % (total, len(missing),
+                                            ("" if not missing else ", ".join(missing)),
+                                            (auto.value if auto else "MISSING"))
+    except Exception as e:
+        from flask import Response
+        return Response("status error: %s" % e, status=500, mimetype="text/plain")
 
